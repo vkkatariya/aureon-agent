@@ -56,34 +56,51 @@
 
 **Goal:** Add the 5 high-leverage tools the agent is missing compared to Hermes's 23 built-in toolsets. Pairs with the plan-node hard block — the agent can now maintain its own plan and ask clarifying questions before doing destructive work.
 
-**Tier 1 (PR #14 kickoff merged, awaits code):**
-- [ ] Sub-task 1: `WorkspaceBoundTool` base class + `confirm_with_captain()` helper + `ToolLog` audit (in `data/tool_log.db`) — `aureon_agent/tools/{base,confirm,log}.py`
-- [ ] Sub-task 2: `terminal` tool — shell access with allowlist + Captain confirmation for destructive ops, 30s timeout, no `shell=True` (prevents injection)
-- [ ] Sub-task 3: `file` tool — 3 sub-tools (`read_file`/`write_file`/`list_dir`) with workspace allowlist (`~/dev-shared/projects/` rw, `~/.openclaw/workspace/` ro), binary writes rejected, UTF-8 only
-- [ ] Sub-task 4: `web` tool — `web_search` (DuckDuckGo HTML, no API key) + `web_fetch` (httpx GET, 10s/30s timeouts, robots.txt respected)
-- [ ] Sub-task 5: Tool registry integration in `agent_runtime.py` — register all 3, route by name in dispatch
-- [ ] Sub-task 6: Telemetry + doctor + docs — `aureon-agent tool-log --last 10` CLI, `doctor` checks workspace allowlist, `docs/tools.md`
+**Tier 1 (PR #14 kickoff merged, code shipped via agent on `feat/aureon-agent-tier1-tools` then merged into dev):**
+- [x] Sub-task 1: `WorkspaceBoundTool` base class + `confirm_with_captain()` helper + `ToolLog` audit (in `data/tool_log.db`) — `aureon_agent/tools/{base,confirm,log}.py`
+- [x] Sub-task 2: `terminal` tool — shell access with allowlist + Captain confirmation for destructive ops, 30s timeout, no `shell=True` (prevents injection)
+- [x] Sub-task 3: `file` tool — 3 sub-tools (`read_file`/`write_file`/`list_dir`) with workspace allowlist (`~/dev-shared/projects/` rw, `~/.openclaw/workspace/` ro), binary writes rejected, UTF-8 only
+- [x] Sub-task 4: `web` tool — `web_search` (DuckDuckGo HTML, no API key) + `web_fetch` (httpx GET, 10s/30s timeouts, robots.txt respected)
+- [x] Sub-task 5: Tool registry integration in `agent_runtime.py` — register all 3, route by name in dispatch
+- [x] Sub-task 6: Telemetry + doctor + docs — `aureon-agent tool-log --last 10` CLI, `doctor` checks workspace allowlist, `docs/tools.md`
 
-**Tier 2 (PR #15 kickoff merged, awaits code):**
-- [ ] Sub-task 1: `todo` tool — 3 sub-tools (`todo_read`/`todo_write`/`todo_add`) for `tasks/todo.md`, workspace allowlist, Markdown format
-- [ ] Sub-task 2: `clarify` tool — pause ReAct loop via `asyncio.Future` + per-session `pending_clarifications` registry in `channels/router.py`, 1-per-iteration + 3-per-session caps, 5min default timeout
-- [ ] Sub-task 3: Tool registry integration in `agent_runtime.py` — register both, route by name
-- [ ] Sub-task 4: Telemetry + doctor + docs — `aureon-agent clarify-log --last 10` CLI, doctor checks
+**Tier 2 (PR #15 kickoff merged, code shipped via agent on `feat/aureon-agent-tier2-tools` then merged into dev):**
+- [x] Sub-task 1: `todo` tool — 3 sub-tools (`todo_read`/`todo_write`/`todo_add`) for `tasks/todo.md`, workspace allowlist, Markdown format
+- [x] Sub-task 2: `clarify` tool — pause ReAct loop via `asyncio.Future` + per-session `pending_clarifications` registry in `channels/router.py`, 1-per-iteration + 3-per-session caps, 5min default timeout
+- [x] Sub-task 3: Tool registry integration in `agent_runtime.py` — register both, route by name
+- [x] Sub-task 4: Telemetry + doctor + docs — `aureon-agent clarify-log --last 10` CLI, doctor checks
 
-**Acceptance criteria (both tiers):**
+**Subagent dispatch (Tier 3, shipped via agent on `feat/aureon-agent-subagent-dispatch` then merged into dev):**
+- [x] `aureon_agent/subagent/{base,task,result,claude_code,sandbox,log,tool}.py` — `SubagentBackend` ABC, `ClaudeCodeBackend` shells to `claude -p`, sandbox via `shutil.copytree` to `/tmp/aureon-subagent-<uuid8>/`
+- [x] `delegate_task` tool — synthesized, cost-control (refuse >50K tokens), 5min timeout, JSON output with summary + diff
+- [x] `data/subagent_log.db` audit log (append-only SQLite)
+- [x] `aureon-agent subagent-log --last 10` CLI
+- [x] `check_claude_cli()` health check (fixed missing `import shutil` in doctor.py)
+
+**Plan-node hard block v2 (Tier 4, shipped via agent on `feat/aureon-agent-plan-node-hard-block` then merged into dev):**
+- [x] `plan_node.py` — heuristic feature counter (imperative verbs, conjunctions, URLs, file paths). 3+ → block.
+- [x] `agent_runtime.py` — hard block before first ReAct iteration, fails open
+- [x] Read-only bypass (`show`, `list`, `display`, `what is`, `how many`)
+- [x] Bypass phrases (`just do it`, `skip the plan`, `simple task`) — accepted with WARN log
+- [x] `has_plan` checks both `tasks/todo.md` and `~/.openclaw/workspace/tasks/todo.md`
+- [x] `tests/test_plan_node.py` — 2 tests covering count_features + require_plan
+- [x] `check_plan_node()` health check in doctor
+
+**Acceptance criteria (all 4 work items, verified on merged dev at `740f208`):**
 - [x] `WorkspaceBoundTool.validate_path` enforces `~/dev-shared/projects/` (rw) + `~/.openclaw/workspace/` (ro)
-- [x] `terminal` tool: allowlisted commands run without confirmation, destructive always ask
-- [x] `file` tool: 3 sub-tools work, binary writes rejected, workspace allowlist enforced
-- [x] `web` tool: search returns `{title, url, snippet}` list, fetch returns text content
-- [x] `todo` tool: 3 sub-tools work, workspace allowlist enforced
-- [x] `clarify` tool: pauses ReAct loop, waits for Captain reply, resumes with answer
-- [x] **Tier 1 tools:** Build `terminal`, `file`, `web` tools with safety rails
-- [x] **Tier 2 tools:** Build `todo` and `clarify` tools
-- [x] All 5 tools log to `data/tool_log.db`
-- [x] `aureon-agent tool-log --last 10` and `clarify-log --last 10` show recent calls
-- [x] `aureon-agent doctor` checks workspace allowlist
-- [x] Live test via Telegram: `ls`, `read README.md`, `search "Ollama version"`, `add to plan`, `clarify`
-- [x] PRs opened to `dev`, DEVLOG entries written
+- [x] `terminal` tool: allowlisted commands run, destructive ask
+- [x] `file` tool: 3 sub-tools, binary rejected, workspace allowlist
+- [x] `web` tool: search + fetch work
+- [x] `todo` tool: 3 sub-tools work, workspace allowlist
+- [x] `clarify` tool: pauses ReAct loop, waits for Captain, resumes
+- [x] `delegate_task` tool: shells out to claude-code, sandbox, audit, cost control
+- [x] `plan_node` hard block: 3+ steps → block, 1-2 proceed, read-only bypass, magic phrases
+- [x] All tools log to `data/tool_log.db` + `data/subagent_log.db`
+- [x] `aureon-agent tool-log` + `clarify-log` + `subagent-log` + `compaction-log` all work
+- [x] `aureon-agent doctor` checks Tools Allowlist, Claude CLI, Plan Node, Model Registry
+- [x] 13/13 pytest tests pass (config, doctor, plan_node, subagent, tier2_tools, tools)
+- [x] `python tests/smoke.py` passes
+- [x] Live-Telegram tests deferred (manual, requires real chat context)
 
 **Out of scope (v1):** browser/computer_use, image_gen/video_gen, spotify/homeassistant/yuanbao, per-command timeout overrides, background processes, real-time streaming output, subagent `todo`, rich `clarify` UIs, multi-party clarifications, persistent clarification state, `todo` history/archive
 
