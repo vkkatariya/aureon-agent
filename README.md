@@ -34,36 +34,35 @@ User (Telegram / Discord)
    ↓ back up the chain
 ```
 
-## Setup
+## Setup & First Install
 
 ```bash
-cd ~/dev-shared/projects/aureon-agent
+git clone git@github.com:vkkatariya/aureon-agent.git
+cd aureon-agent
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
+aureon-agent postinstall
+aureon-agent setup
 ```
 
-## Configuration
+## Commands
 
-Create `.env` (gitignored):
+- **Start:** `aureon-agent start` or simply `aureon-agent`
+- **Reconfigure:** `aureon-agent setup --section channel`
+- **Reset:** `aureon-agent setup --reset`
+- **Non-interactive:** `aureon-agent setup --non-interactive --telegram-bot-token "$TG" --telegram-allowed-chats 723865496`
+- **Check health:** `aureon-agent doctor`
+- **Stop daemon:** `aureon-agent stop`
+- **Tail logs:** `aureon-agent logs`
 
-```bash
-TELEGRAM_BOT_TOKEN=<from @BotFather>
-DISCORD_BOT_TOKEN=<from Discord Developer Portal, optional>
-TELEGRAM_ALLOWED_CHATS=<comma-separated chat IDs, blank = deny all>
-OLLAMA_BASE_URL=http://127.0.0.1:11434/v1   # primary
-OLLAMA_CLOUD_BASE_URL=https://ollama.com/v1 # fallback if primary is unreachable
-OLLAMA_API_KEY=<from ollama.com, optional for local>
-OLLAMA_MODEL=minimax-m2.5:cloud   # local proxy alias; use minimax-m3 against https://ollama.com/v1
-HEALTH_PORT=7777   # optional, 127.0.0.1 only
-LOG_LEVEL=INFO
-```
+## Setup Script Behavior
 
-## Run
-
-```bash
-python main.py
-```
+The `aureon-agent setup` wizard supports multiple modes:
+- **Interactive (default):** Prompts for each value, offering to keep, modify, or reset existing configs.
+- **Quick (`--quick`):** Skips sections that already have a valid configuration, only prompting for missing values.
+- **Non-interactive (`--non-interactive`):** Bypasses all TUI prompts. Reuses existing config or relies entirely on command-line flags (e.g., `--telegram-bot-token`) and environment variables.
+- **Reset (`--reset`):** Destroys the current configuration and starts fresh. Destructive action requires confirmation.
 
 ## Workspace
 
