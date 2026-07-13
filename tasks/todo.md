@@ -38,7 +38,8 @@
 - [x] Sub-task 14: Dev workflow docs — README env vars updated (added `OLLAMA_CLOUD_BASE_URL`, corrected default model), DEVLOG entry pending commit
 
 ## Phase 6: Production hardening (post-MVP)
-- [ ] systemd user service at ~/.config/systemd/user/aureon-agent.service
+- [x] systemd user service at ~/.config/systemd/user/aureon-agent.service (PR #9 — unit template committed + install wired in setup.py, live activation pending first real-terminal `aureon-agent setup --section daemon` run)
+- [x] PID lock at startup (PR #9 — `aureon_agent/pidlock.py`, prevents the Telegram 409 trap when two instances run on the same token)
 - [ ] Plan-node hard block (v2)
 - [ ] Subagent dispatch via Hermes delegate_task
 - [ ] Session compaction for long histories
