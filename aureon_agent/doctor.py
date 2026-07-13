@@ -64,6 +64,11 @@ def check_tools_allowlist() -> Tuple[str, str]:
         return "❌", f"RO workspace {WorkspaceBoundTool.ALLOWED_RO} missing"
     return "✅", "Paths configured correctly"
 
+def check_claude_cli() -> Tuple[str, str]:
+    if shutil.which("claude"):
+        return "✅", "claude-code CLI found"
+    return "❌", "claude-code CLI missing"
+
 def check_ollama() -> Tuple[str, str]:
     config = AureonConfig.from_file(ENV_PATH)
     try:
@@ -121,6 +126,7 @@ def main():
         ("Config (.env)", check_env),
         ("Workspace", check_workspace),
         ("Tools Allowlist", check_tools_allowlist),
+        ("Claude CLI", check_claude_cli),
         ("Ollama", check_ollama),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),

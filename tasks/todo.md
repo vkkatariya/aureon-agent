@@ -41,7 +41,7 @@
 - [x] systemd user service at ~/.config/systemd/user/aureon-agent.service (PR #9 — unit template committed + install wired in setup.py, **live as PID 2372177 since 2026-07-13 22:43 CEST**, status: `active (running)`, `Restart=on-failure` survives crashes, `loginctl enable-linger` keeps it alive past logout)
 - [x] PID lock at startup (PR #9 — `aureon_agent/pidlock.py`, prevents the Telegram 409 trap when two instances run on the same token)
 - [ ] Plan-node hard block (v2)
-- [ ] Subagent dispatch via the delegate_task pattern
+- [x] Subagent dispatch via the delegate_task pattern
 - [x] Session compaction for long histories (PR pending, branch `feat/aureon-agent-session-compaction`)
   - [x] Sub-task 1: Token counting + model-aware threshold — `aureon_agent/models.py` (`MODEL_CONTEXT_WINDOWS`, unknown-model fallback 32K + WARN), `compaction/counter.py` (tiktoken `cl100k_base`, `len//4` fallback), `compaction/threshold.py` (`compute_compact_threshold`, `compute_recent_verbatim_size`, safety skip if system prompt >50% of context window)
   - [x] Sub-task 2: Summarization + audit log — `compaction/summarizer.py` (LLM-call summarizer, 300 max output tokens, 30s timeout, degraded-fallback-on-failure), `compaction/log.py` (`CompactionLog` append-only SQLite audit trail in `data/compaction_log.db`, never touches `sessions.db`)

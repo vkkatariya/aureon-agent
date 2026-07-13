@@ -3,6 +3,13 @@
 
 ---
 
+## 2026-07-13 — Phase 6.5: Subagent dispatch (local session)
+**Did:** Built `delegate_task` tool to dispatch parallel work to a subagent (`claude-code` CLI), complete with sandboxing and audit logging. Branched `feat/aureon-agent-subagent-dispatch` off `dev`.
+**Built:** `aureon_agent/subagent/` package (`base.py`, `task.py`, `sandbox.py`, `claude_code.py`, `log.py`, `tool.py`, `__init__.py`). Added `aureon-agent subagent-log` CLI and `check_claude_cli` doctor check. Registered `delegate_task` in `agent_runtime.py`.
+**Verified:** Tests passing, doctor passing.
+**Next:** Plan-node hard block (v2).
+**Modified:** `aureon_agent/subagent/*`, `aureon_agent/__main__.py`, `aureon_agent/doctor.py`, `agent_runtime.py`, `tasks/DEVLOG.md`, `tasks/todo.md`.
+
 ## 2026-07-13 — Phase 6.5: Tier 2 tools (local session)
 **Did:** Built Tier 2 tools (`todo` and `clarify`), adding the ability for the agent to maintain its own plan and ask questions before destructive actions. Branched `feat/aureon-agent-tier2-tools` off `dev`.
 **Built:** `aureon_agent/tools/todo.py` (`todo_read`, `todo_write`, `todo_add`), `aureon_agent/tools/clarify.py` (`clarify`). Updated `channels/router.py` with `pending_clarifications` and `send_message` capabilities to properly pause the ReAct loop and await a user reply. Registered the tools in `agent_runtime.py`.
