@@ -61,7 +61,7 @@ def run_systemd_setup() -> None:
     else:
         venv_python = os.path.join(BASE_DIR, ".venv", "bin", "python")
         unit_content = f"""[Unit]
-Description=aureon-agent — Hermes-flavored autonomous AI agent
+Description=aureon-agent — personal AI agent
 After=network.target
 
 [Service]
@@ -79,9 +79,9 @@ WantedBy=default.target
 
     Path(unit_path).write_text(unit_content)
 
-    # Captain's other rule (per OpenClaw docs): Linux user services die on
-    # logout unless lingering is enabled. /var/lib/systemd/linger is a
-    # directory — one file per user with linger enabled.
+    # Captain's rule: Linux user services die on logout unless lingering
+    # is enabled. /var/lib/systemd/linger is a directory — one file per
+    # user with linger enabled.
     linger_dir = Path("/var/lib/systemd/linger")
     try:
         linger_users = {p.name for p in linger_dir.iterdir()} if linger_dir.is_dir() else set()

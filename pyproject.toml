@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aureon-agent"
 version = "0.1.0"
-description = "Hermes-flavored autonomous AI agent"
+description = "Personal AI agent with Ollama local + cloud fallback, doctrine-aware startup, and multi-channel (Telegram + Discord) support"
 readme = "README.md"
 requires-python = ">=3.12"
 dynamic = ["dependencies"]

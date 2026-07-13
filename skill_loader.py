@@ -1,9 +1,8 @@
-"""Loads OpenClaw SKILL.md skills from workspace/skills/.
+"""Loads SKILL.md skills from workspace/skills/.
 
 Two skill shapes are supported:
-  - Code skills (handler.py present): tools + async execute(), same contract
-    as Tiny-OpenClaw's skill format.
-  - Prose skills (the 8 shipped OpenClaw skills — caveman, homelab-*, etc.):
+  - Code skills (handler.py present): tools + async execute() contract.
+  - Prose skills (the 8 shipped doctrine skills — caveman, homelab-*, etc.):
     no handler.py, just a SKILL.md body meant for an LLM to read and follow.
     These get one synthesized tool, `read_skill_<name>`, that returns the
     skill body so the agent can pull it into context on demand.

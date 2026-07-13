@@ -38,7 +38,7 @@ Before any meaningful work, read these files in order:
 
 ## Doctrine source of truth
 
-This project loads its agent identity, user preferences, and workflow doctrine from `~/.openclaw/workspace/` via symlinks in `workspace/`. The symlinks are part of the repo (so doctrine is versioned alongside the code), but the underlying files are owned by the OpenClaw agent, not by this repo.
+This project loads its agent identity, user preferences, and workflow doctrine from `~/.openclaw/workspace/` via symlinks in `workspace/`. The symlinks are part of the repo (so doctrine is versioned alongside the code), but the underlying files live outside this repo.
 
 ```
 workspace/
@@ -51,14 +51,14 @@ workspace/
 ├── HEARTBEAT.md       → ~/.openclaw/workspace/HEARTBEAT.md
 ├── channel-policy-spec.md → ~/.openclaw/workspace/channel-policy-spec.md
 ├── handoff-template.md → ~/.openclaw/workspace/handoff-template.md
-├── skills/            → ~/.openclaw/workspace/skills/        (8 OpenClaw skills)
+├── skills/            → ~/.openclaw/workspace/skills/        (8 doctrine skills)
 ├── memory/            → ~/.openclaw/workspace/memory/        (daily notes)
 └── tasks/
     ├── todo.md        (own copy — Captain's active work)
     └── lessons.md     (own copy — append on correction)
 ```
 
-**To edit doctrine:** edit the source at `~/.openclaw/workspace/`, not the symlinks. Symlinks just resolve; the source files are owned by the OpenClaw agent. If symlinks are broken on a fresh clone, see `README.md` §"Workspace" for the restore snippet.
+**To edit doctrine:** edit the source at `~/.openclaw/workspace/`, not the symlinks. Symlinks just resolve; the source files live outside this repo. If symlinks are broken on a fresh clone, see `README.md` §"Workspace" for the restore snippet.
 
 ## Workflow references (symlinked, homelab-only)
 
@@ -159,18 +159,18 @@ gh run watch
 
 ### Current phase: Phase 1 done, Phase 2 ready (SQLite Memory + SessionManager)
 
-Hermes-flavored autonomous AI agent modeled on Tiny-OpenClaw's 8-component architecture, with Ollama local + cloud fallback, doctrine-aware startup, and multi-channel (Telegram + Discord) support. Vendored reference at `references/tiny-openclaw/` (8 files, pinned commit `a4cb8cb94`).
+Personal AI agent with Ollama local + cloud fallback, doctrine-aware startup, and multi-channel (Telegram + Discord) support. Vendored reference at `references/tiny-openclaw/` (8 files, pinned commit `a4cb8cb94`).
 
 ### Stack
 
 | Layer | Technology | Notes |
 |---|---|---|
-| Language | Python 3.12 | async-first, OpenClaw convention |
+| Language | Python 3.12 | async-first |
 | LLM | Ollama (OpenAI-compat) | `https://ollama.com/v1` for cloud, `http://127.0.0.1:11434/v1` for local |
 | HTTP | `httpx` (async) | Ollama + tool calls |
 | Telegram | `python-telegram-bot[rate-limiter]` | polling v1, webhook v2 |
 | Discord | `discord.py` | DM-only v1, server v2 |
-| DB | `aiosqlite` (WAL mode) | matches `openclaw.sqlite` pattern |
+| DB | `aiosqlite` (WAL mode) | matches your local SQLite pattern |
 | File watching | `watchfiles` | skill hot-reload |
 | Config | `.env` via `python-dotenv` | standard, never committed |
 | HTTP health | `aiohttp` (optional) | `127.0.0.1:7777/health` for systemd watchdog |
@@ -184,7 +184,7 @@ aureon-agent/
 ├── context_builder.py            # multi-source system prompt
 ├── memory.py                     # SQLite Memory (note:* + meta)
 ├── session_manager.py            # SQLite SessionManager
-├── skill_loader.py               # OpenClaw SKILL.md format + hot-reload
+├── skill_loader.py               # SKILL.md format + hot-reload
 ├── plan_node.py                  # soft-warning helper
 ├── lessons.py                    # append to workspace/tasks/lessons.md
 ├── channels/
