@@ -1,7 +1,9 @@
 import argparse
 import os
+import logging
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
 from aureon_agent.config import AureonConfig, get_chat_id_from_update
@@ -14,9 +16,13 @@ from aureon_agent.tui import (
     checkbox,
     text,
     password,
+    path,
     print_table,
     spinner,
+    progress,
 )
+
+logger = logging.getLogger("aureon-agent.setup")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
@@ -34,15 +40,28 @@ def get_skills_count() -> int:
                 count += 1
     return count
 
-def run_systemd_setup():
+def run_systemd_setup() -> None:
+    """Install + enable + start the aureon-agent systemd user service.
+
+    Source unit lives at `systemd/aureon-agent.service` in the repo
+    (committed). We just copy it to `~/.config/systemd/user/` and tell
+    systemd to pick it up. Captain's hard rule: 127.0.0.1 binds only,
+    no 0.0.0.0 — already enforced by the unit's HEALTH_PORT default
+    and the doctor check.
+    """
     unit_dir = os.path.expanduser("~/.config/systemd/user")
     os.makedirs(unit_dir, exist_ok=True)
     unit_path = os.path.join(unit_dir, "aureon-agent.service")
-    venv_python = os.path.join(BASE_DIR, ".venv", "bin", "python")
-    
-    unit_content = f"""# ~/.config/systemd/user/aureon-agent.service
-[Unit]
-Description=aureon-agent (Telegram + Discord personal AI agent)
+
+    # Source of truth: the committed unit file. Falls back to inline
+    # template if the repo layout is unexpected (e.g. zip install).
+    repo_unit = os.path.join(BASE_DIR, "systemd", "aureon-agent.service")
+    if os.path.exists(repo_unit):
+        unit_content = Path(repo_unit).read_text()
+    else:
+        venv_python = os.path.join(BASE_DIR, ".venv", "bin", "python")
+        unit_content = f"""[Unit]
+Description=aureon-agent — Hermes-flavored autonomous AI agent
 After=network.target
 
 [Service]
@@ -57,12 +76,55 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 """
-    with open(unit_path, "w") as f:
-        f.write(unit_content)
-        
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-    subprocess.run(["systemctl", "--user", "enable", "aureon-agent.service"], check=True)
-    subprocess.run(["systemctl", "--user", "start", "aureon-agent.service"], check=True)
+
+    Path(unit_path).write_text(unit_content)
+
+    # Captain's other rule (per OpenClaw docs): Linux user services die on
+    # logout unless lingering is enabled. /var/lib/systemd/linger is a
+    # directory — one file per user with linger enabled.
+    linger_dir = Path("/var/lib/systemd/linger")
+    try:
+        linger_users = {p.name for p in linger_dir.iterdir()} if linger_dir.is_dir() else set()
+    except (FileNotFoundError, PermissionError):
+        linger_users = set()
+    # os.getlogin() can fail in non-tty contexts; fall back to pwd lookup.
+    try:
+        current_user = os.getlogin() or ""
+    except OSError:
+        current_user = ""
+    if not current_user:
+        import pwd
+        try:
+            current_user = pwd.getpwuid(os.getuid()).pw_name
+        except (KeyError, ImportError):
+            current_user = os.environ.get("USER", "")
+    if current_user and current_user not in linger_users:
+        subprocess.run(
+            ["loginctl", "enable-linger", current_user],
+            check=False,
+        )
+
+    # daemon-reload/enable/start all need a DBUS user session. In
+    # non-tty contexts (cron, sub-process) the bus may be unavailable.
+    # Make these best-effort: install the unit, but don't fail the
+    # whole wizard if systemctl can't reach the user manager.
+    for cmd in (
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "aureon-agent.service"],
+        ["systemctl", "--user", "stop", "aureon-agent.service"],
+        ["systemctl", "--user", "start", "aureon-agent.service"],
+    ):
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.warning(
+                "systemctl %s failed (exit %d). Likely no DBUS user "
+                "session (e.g. running from a non-tty context). Unit "
+                "file is in place at %s — re-run from your terminal to "
+                "activate.",
+                " ".join(cmd[2:]),
+                result.returncode,
+                unit_path,
+            )
 
 def step_existing_config(args) -> AureonConfig:
     exists = os.path.exists(ENV_PATH)
