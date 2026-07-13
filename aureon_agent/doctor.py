@@ -9,6 +9,7 @@ from aureon_agent.tui import print_banner, print_table, print_status
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
+ENV_PATH = os.path.join(BASE_DIR, ".env")
 
 def check_python() -> Tuple[str, str]:
     if sys.version_info >= (3, 12):
@@ -22,27 +23,26 @@ def check_venv() -> Tuple[str, str]:
     return "❌", "Not running in a virtual environment"
 
 def check_env() -> Tuple[str, str]:
-    env_path = os.path.join(BASE_DIR, ".env")
-    if not os.path.exists(env_path):
+    if not os.path.exists(ENV_PATH):
         return "❌", "Missing .env file"
-    
-    stat = os.stat(env_path)
+
+    stat = os.stat(ENV_PATH)
     perms = oct(stat.st_mode)[-3:]
     if perms != "600":
         return "❌", f"Incorrect .env permissions: {perms} (should be 600)"
-        
-    config = AureonConfig.from_file(env_path)
+
+    config = AureonConfig.from_file(ENV_PATH)
     errors = config.validate()
     if errors:
         return "❌", "Validation failed: " + "; ".join(errors)
-    
+
     if not config.TELEGRAM_BOT_TOKEN and not config.DISCORD_BOT_TOKEN:
         return "🟡", "No channels configured"
-    
+
     # Captain's command: Telegram allowlist check
     if config.TELEGRAM_BOT_TOKEN and not config.TELEGRAM_ALLOWED_CHATS:
         return "❌", "TELEGRAM_ALLOWED_CHATS is empty"
-        
+
     return "✅", "Valid and chmod 600"
 
 def check_workspace() -> Tuple[str, str]:
@@ -57,7 +57,7 @@ def check_workspace() -> Tuple[str, str]:
     return "✅", "All symlinks resolve"
 
 def check_ollama() -> Tuple[str, str]:
-    config = AureonConfig.from_env()
+    config = AureonConfig.from_file(ENV_PATH)
     try:
         res = httpx.get(f"{config.OLLAMA_BASE_URL}/models", timeout=3)
         res.raise_for_status()
@@ -66,7 +66,7 @@ def check_ollama() -> Tuple[str, str]:
         return "❌", f"Unreachable: {e}"
 
 def check_telegram() -> Tuple[str, str]:
-    config = AureonConfig.from_env()
+    config = AureonConfig.from_file(ENV_PATH)
     if not config.TELEGRAM_BOT_TOKEN:
         return "🟡", "Not configured"
     try:

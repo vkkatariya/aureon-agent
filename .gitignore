@@ -4,6 +4,8 @@
 __pycache__/
 *.pyc
 .venv/
+aureon_agent.egg-info/
+*.egg-info/
 data/*.db
 data/*.db-wal
 data/*.db-shm

@@ -1,5 +1,0 @@
-[console_scripts]
-aureon-agent = aureon_agent.__main__:main
-aureon-agent-doctor = aureon_agent.doctor:main
-aureon-agent-postinstall = aureon_agent.postinstall:main
-aureon-agent-setup = aureon_agent.setup:main
