@@ -42,9 +42,48 @@
 - [x] PID lock at startup (PR #9 — `aureon_agent/pidlock.py`, prevents the Telegram 409 trap when two instances run on the same token)
 - [ ] Plan-node hard block (v2)
 - [ ] Subagent dispatch via the delegate_task pattern
-- [ ] Session compaction for long histories
+- [x] Session compaction for long histories (PR pending, branch `feat/aureon-agent-session-compaction`)
+  - [x] Sub-task 1: Token counting + model-aware threshold — `aureon_agent/models.py` (`MODEL_CONTEXT_WINDOWS`, unknown-model fallback 32K + WARN), `compaction/counter.py` (tiktoken `cl100k_base`, `len//4` fallback), `compaction/threshold.py` (`compute_compact_threshold`, `compute_recent_verbatim_size`, safety skip if system prompt >50% of context window)
+  - [x] Sub-task 2: Summarization + audit log — `compaction/summarizer.py` (LLM-call summarizer, 300 max output tokens, 30s timeout, degraded-fallback-on-failure), `compaction/log.py` (`CompactionLog` append-only SQLite audit trail in `data/compaction_log.db`, never touches `sessions.db`)
+  - [x] Sub-task 3: View-layer integration — `agent_runtime.py` `_maybe_compact()`/`_compact()` wired into `run()`, gated by `AUREON_COMPACTION_ENABLED` (default off), sliding-window + LLM-summary strategy, fail-open on any error
+  - [x] Sub-task 4: Telemetry + doctor — `compactions_run_total`/`compactions_skipped_total` counters, `python -m aureon_agent compaction-log [--last|--session|--model]` CLI, `doctor.py` checks (`check_compaction_log`, `check_model_known`), CLAUDE.md Commands section updated
+  - [x] Tests: `tests/test_compaction_counter.py`, `tests/test_compaction_threshold.py`, `tests/test_compaction_summarizer.py`, `tests/test_compaction_integration.py` (24 passed), live-verified against local Ollama (31320→3944 tokens, audit log recorded correctly)
+  - [ ] Live-channel test: 30+ Telegram messages on 32K model to observe auto-compaction firing; confirm no firing on 1M-context model (deferred — only verified via direct `_maybe_compact` calls, not a real channel round-trip)
 - [ ] Webhook mode for Telegram (replace polling)
 - [ ] Server/group channel support
+
+## Phase 6.5: Tier 1 + Tier 2 tools (Hermes parity)
+
+**Goal:** Add the 5 high-leverage tools the agent is missing compared to Hermes's 23 built-in toolsets. Pairs with the plan-node hard block — the agent can now maintain its own plan and ask clarifying questions before doing destructive work.
+
+**Tier 1 (PR #14 kickoff merged, awaits code):**
+- [ ] Sub-task 1: `WorkspaceBoundTool` base class + `confirm_with_captain()` helper + `ToolLog` audit (in `data/tool_log.db`) — `aureon_agent/tools/{base,confirm,log}.py`
+- [ ] Sub-task 2: `terminal` tool — shell access with allowlist + Captain confirmation for destructive ops, 30s timeout, no `shell=True` (prevents injection)
+- [ ] Sub-task 3: `file` tool — 3 sub-tools (`read_file`/`write_file`/`list_dir`) with workspace allowlist (`~/dev-shared/projects/` rw, `~/.openclaw/workspace/` ro), binary writes rejected, UTF-8 only
+- [ ] Sub-task 4: `web` tool — `web_search` (DuckDuckGo HTML, no API key) + `web_fetch` (httpx GET, 10s/30s timeouts, robots.txt respected)
+- [ ] Sub-task 5: Tool registry integration in `agent_runtime.py` — register all 3, route by name in dispatch
+- [ ] Sub-task 6: Telemetry + doctor + docs — `aureon-agent tool-log --last 10` CLI, `doctor` checks workspace allowlist, `docs/tools.md`
+
+**Tier 2 (PR #15 kickoff merged, awaits code):**
+- [ ] Sub-task 1: `todo` tool — 3 sub-tools (`todo_read`/`todo_write`/`todo_add`) for `tasks/todo.md`, workspace allowlist, Markdown format
+- [ ] Sub-task 2: `clarify` tool — pause ReAct loop via `asyncio.Future` + per-session `pending_clarifications` registry in `channels/router.py`, 1-per-iteration + 3-per-session caps, 5min default timeout
+- [ ] Sub-task 3: Tool registry integration in `agent_runtime.py` — register both, route by name
+- [ ] Sub-task 4: Telemetry + doctor + docs — `aureon-agent clarify-log --last 10` CLI, doctor checks
+
+**Acceptance criteria (both tiers):**
+- [ ] `WorkspaceBoundTool.validate_path` enforces `~/dev-shared/projects/` (rw) + `~/.openclaw/workspace/` (ro)
+- [ ] `terminal` tool: allowlisted commands run without confirmation, destructive always ask
+- [ ] `file` tool: 3 sub-tools work, binary writes rejected, workspace allowlist enforced
+- [ ] `web` tool: search returns `{title, url, snippet}` list, fetch returns text content
+- [ ] `todo` tool: 3 sub-tools work, workspace allowlist enforced
+- [ ] `clarify` tool: pauses ReAct loop, waits for Captain reply, resumes with answer
+- [ ] All 5 tools log to `data/tool_log.db`
+- [ ] `aureon-agent tool-log --last 10` and `clarify-log --last 10` show recent calls
+- [ ] `aureon-agent doctor` checks workspace allowlist
+- [ ] Live test via Telegram: `ls`, `read README.md`, `search "Ollama version"`, `add to plan`, `clarify`
+- [ ] PRs opened to `dev`, DEVLOG entries written
+
+**Out of scope (v1):** browser/computer_use, image_gen/video_gen, spotify/homeassistant/yuanbao, per-command timeout overrides, background processes, real-time streaming output, subagent `todo`, rich `clarify` UIs, multi-party clarifications, persistent clarification state, `todo` history/archive
 
 ## Phase 7: MCP integration (keep local skills, add MCP for new services)
 
