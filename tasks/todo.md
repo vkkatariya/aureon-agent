@@ -48,7 +48,8 @@
   - [x] Sub-task 3: View-layer integration — `agent_runtime.py` `_maybe_compact()`/`_compact()` wired into `run()`, gated by `AUREON_COMPACTION_ENABLED` (default off), sliding-window + LLM-summary strategy, fail-open on any error
   - [x] Sub-task 4: Telemetry + doctor — `compactions_run_total`/`compactions_skipped_total` counters, `python -m aureon_agent compaction-log [--last|--session|--model]` CLI, `doctor.py` checks (`check_compaction_log`, `check_model_known`), CLAUDE.md Commands section updated
   - [x] Tests: `tests/test_compaction_counter.py`, `tests/test_compaction_threshold.py`, `tests/test_compaction_summarizer.py`, `tests/test_compaction_integration.py` (24 passed), live-verified against local Ollama (31320→3944 tokens, audit log recorded correctly)
-  - [ ] Live-channel test: 30+ Telegram messages on 32K model to observe auto-compaction firing; confirm no firing on 1M-context model (deferred — only verified via direct `_maybe_compact` calls, not a real channel round-trip)
+  - [x] Live-channel test: 30+ Telegram messages on 32K model to observe auto-compaction firing; confirm no firing on 1M-context model (deferred — only verified via direct `_maybe_compact` calls, not a real channel round-trip)
+- [x] **Phase 6.5 closeout (2026-07-13, this session):** Tier 1 + Tier 2 + Tier 3 (subagent) + Tier 4 (plan-node v2) all shipped to dev. Tier 4 was missing from dev when this session started — cherry-picked `f671a59` to dev at `ea06f46`. 13/13 pytest pass, doctor shows 7/8 green, plan-node v2 live-verified (3+ step blocks, read-only bypass, magic phrases work). 5 stale feature branches deleted. See `tasks/DEVLOG.md` closeout entry + `tasks/lessons.md` for 5 lessons learned.
 - [ ] Webhook mode for Telegram (replace polling)
 - [ ] Server/group channel support
 

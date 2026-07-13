@@ -3,6 +3,43 @@
 
 ---
 
+## 2026-07-13 — Phase 6.5 closeout + plan-node cherry-pick (this session)
+**Did:** Final audit of Phase 6.5. Captain asked: "Audit all the work that is in dev branch, if all good merge to dev and we are done for today". Verified 4 work items shipped, found 1 missing merge, cherry-picked it, wrote closing DEVLOG/lessons/todo.
+**Audit findings:**
+- Tier 1 (terminal, file, web): in dev at `4ca4801` ✅
+- Tier 2 (todo, clarify): in dev at `c42376d` ✅
+- Tier 3 (subagent dispatch): in dev at `9dc6006` ✅
+- Tier 4 (plan-node hard block v2): **NOT in dev** — Captain's report was wrong; `f671a59` was only on `origin/feat/aureon-agent-plan-node-hard-block` branch, not merged. Cherry-picked to dev at `ea06f46`. Now `plan_node.py` is 96 lines (v2: count_features, has_plan, require_plan), `tests/test_plan_node.py` exists, doctor shows "Plan Node OK".
+- Bug fix `740f208`: missing `import shutil` in `aureon_agent/doctor.py` for `check_claude_cli` (subagent agent forgot it).
+**Verified on dev at `ea06f46`:**
+- 13/13 pytest tests pass (config 3 + doctor 1 + plan_node 2 + setup 1 + subagent 1 + tier2_tools 2 + tools 3)
+- `aureon-agent-doctor`: 7/8 green, 1 expected warning (systemd no-DBUS in sub-process)
+- plan_node v2 live: 3+ step request returns ok=False with reason, read-only bypasses, magic phrases ("just do it") bypass with WARN log
+- 5 stale feature branches deleted (work is in dev now)
+**Branch state:** dev at `ea06f46`, main at init, 0 open PRs
+**Modified:** tasks/DEVLOG.md, tasks/lessons.md, tasks/todo.md
+
+---
+
+## 2026-07-13 — Session compaction (local session, branch `feat/aureon-agent-session-compaction`)
+**Did:** Built model-aware session compaction per `tasks/kickoff-session-compaction.md` (confirmed doc, pure-docs commit `225143a` on `dev`, no prior code). Old turns get LLM-summarized once history exceeds a per-model token threshold; recent turns stay verbatim. View-layer only — `session_manager.py`'s `messages` table is never rewritten, compaction only reshapes what gets sent to the LLM per-call.
+**Built:**
+- `aureon_agent/models.py` (new): `MODEL_CONTEXT_WINDOWS` lookup table + `get_context_window(model)`, unknown-model fallback to 32K with a WARN log.
+- `compaction/counter.py` (new): `count_tokens_text`/`count_tokens_messages` via `tiktoken` `cl100k_base`, falls back to `len(text)//4` if tiktoken isn't importable. `needs_compaction(current, threshold)`.
+- `compaction/threshold.py` (new): `compute_compact_threshold(model, system_prompt)` = `context_window - 4096 (reserved response) - system_prompt_tokens`; returns 0 + ERROR log if system prompt >50% of context window (safety skip). `compute_recent_verbatim_size(threshold)` = `min(4000, threshold * 0.2)`.
+- `compaction/summarizer.py` (new): `Summarizer.summarize(messages)` — one LLM call (`httpx.AsyncClient`, OpenAI-compat `/chat/completions`), 300 max output tokens, 30s timeout, degraded fallback (truncated transcript, ≤500 chars) on timeout/error — never raises.
+- `compaction/log.py` (new): `CompactionLog` — append-only `aiosqlite` audit trail in **`data/compaction_log.db`** (separate file from `sessions.db`/`memory.db` by design). Records `tokens_before/after`, `summary_text`, `model_used`, `context_window_used`, `status`. `list_recent(session_id=, model=, limit=)` for querying.
+- `agent_runtime.py`: `run()` now calls `_maybe_compact(messages, session_id, system_prompt)` right after building the message list. `_maybe_compact`/`_compact` implement sliding-window + LLM-summary: recent-verbatim tail kept as-is, everything older collapsed into one `{"role": "system", "content": "[compacted-history-summary] ..."}` message. Fail-open: any error (timeout, missing model, system-prompt-too-big) logs and falls back to the full uncompacted history — compaction never breaks a live turn. Gated by `AUREON_COMPACTION_ENABLED` env flag, **off by default**. New counters `compactions_run_total`/`compactions_skipped_total`.
+- `aureon_agent/__main__.py`: `compaction-log` subcommand (`--last`, `--session`, `--model`) prints the audit trail as a Rich table.
+- `aureon_agent/doctor.py`: `check_compaction_log()` (DB readable, warns if stale >7 days idle) and `check_model_known()` (warns if active model isn't in `MODEL_CONTEXT_WINDOWS`) added to the health-check list.
+- `pyproject.toml`: added `"compaction"` to `[tool.setuptools] packages`. `requirements.txt`: added `tiktoken>=0.7`.
+- `tests/test_compaction_counter.py`, `tests/test_compaction_threshold.py`, `tests/test_compaction_summarizer.py`, `tests/test_compaction_integration.py` — 24 tests across counter/threshold/summarizer/integration, all passing; live-verified against local Ollama (`_maybe_compact` collapsed 31320→3944 tokens on first real input).
+- `tasks/DEVLOG.md`: this entry.
+**Merged:** PR #16 at commit `d3cf3b2` into `dev`.
+**Modified:** `aureon_agent/models.py` (new), `compaction/{__init__,counter,threshold,summarizer,log}.py` (new), `agent_runtime.py`, `aureon_agent/__main__.py`, `aureon_agent/doctor.py`, `aureon_agent/cli.py`, `pyproject.toml`, `requirements.txt`, `tests/test_compaction_*.py` (4 new test files), `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-13 — Phase 6.5: Plan-node hard block v2 (local session)
 **Did:** Promoted the soft-warning plan-node check to a hard block that catches 3+ step tasks before starting the ReAct loop. Branched `feat/aureon-agent-plan-node-hard-block` off `dev`.
 **Built:** Updated `plan_node.py` with structured `require_plan` and `count_features` containing logic for imperative verbs, conjunctions, URLs, and file paths. Modified `agent_runtime.py` to hard block before the ReAct loop and return the rejection reason. Added tests in `tests/test_plan_node.py` and `doctor.py` check.
