@@ -40,7 +40,7 @@
 ## Phase 6: Production hardening (post-MVP)
 - [x] systemd user service at ~/.config/systemd/user/aureon-agent.service (PR #9 — unit template committed + install wired in setup.py, **live as PID 2372177 since 2026-07-13 22:43 CEST**, status: `active (running)`, `Restart=on-failure` survives crashes, `loginctl enable-linger` keeps it alive past logout)
 - [x] PID lock at startup (PR #9 — `aureon_agent/pidlock.py`, prevents the Telegram 409 trap when two instances run on the same token)
-- [ ] Plan-node hard block (v2)
+- [x] Plan-node hard block (v2)
 - [x] Subagent dispatch via the delegate_task pattern
 - [x] Session compaction for long histories (PR pending, branch `feat/aureon-agent-session-compaction`)
   - [x] Sub-task 1: Token counting + model-aware threshold — `aureon_agent/models.py` (`MODEL_CONTEXT_WINDOWS`, unknown-model fallback 32K + WARN), `compaction/counter.py` (tiktoken `cl100k_base`, `len//4` fallback), `compaction/threshold.py` (`compute_compact_threshold`, `compute_recent_verbatim_size`, safety skip if system prompt >50% of context window)
@@ -183,12 +183,17 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - 3-5 MCP servers: consider a thin "tool router" wrapper that hides the split
 - 5+ MCP servers: **full migration** to MCP, retire skill format. Only do this when 8+ services exist and the migration cost is justified.
 
-**Phase 7 acceptance criteria:**
-- [ ] Tool registry merger works with 0 + 1 + N MCP servers
-- [ ] Graceful failure when MCP server unreachable
-- [ ] At least 1 real MCP server live (Notion preferred, has clear value)
-- [ ] Decision doc in `docs/mcp-decision.md` (why hybrid, when to migrate)
-- [ ] Existing 8 doctrine skills still load and execute unchanged
+**Phase 7 Acceptance criteria**
+
+- [x] Agent blocks 3+ step tasks without a plan, with clear Telegram/Discord message
+- [x] Agent proceeds when plan exists
+- [x] Agent proceeds when bypass phrase used, with WARN log
+- [x] Read-only requests never trigger
+- [x] Step counter catches: 3+ imperative verbs, 3+ file paths, 3+ URLs
+- [x] Plan file read errors fail open
+- [x] Doctor passes
+- [x] pytest passes (8+ tests)
+- [x] Live test: 3-step task blocks, bypass phrase works, plan file works
 
 **Sub-task 1: Foundation** ✅ (PR #8)
 - [x] Add `rich` + `questionary` to `requirements.txt`

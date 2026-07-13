@@ -70,6 +70,15 @@ def check_claude_cli() -> Tuple[str, str]:
         return "✅", "claude-code CLI found"
     return "❌", "claude-code CLI missing"
 
+def check_plan_node() -> Tuple[str, str]:
+    from plan_node import has_plan
+    # Just check if it crashes
+    try:
+        has_plan(".")
+        return "✅", "Plan node OK"
+    except Exception as e:
+        return "❌", f"Plan node error: {e}"
+
 def check_ollama() -> Tuple[str, str]:
     config = AureonConfig.from_file(ENV_PATH)
     try:
@@ -128,6 +137,7 @@ def main():
         ("Workspace", check_workspace),
         ("Tools Allowlist", check_tools_allowlist),
         ("Claude CLI", check_claude_cli),
+        ("Plan Node", check_plan_node),
         ("Ollama", check_ollama),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),

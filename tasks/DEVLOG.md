@@ -3,6 +3,12 @@
 
 ---
 
+## 2026-07-13 — Phase 6.5: Plan-node hard block v2 (local session)
+**Did:** Promoted the soft-warning plan-node check to a hard block that catches 3+ step tasks before starting the ReAct loop. Branched `feat/aureon-agent-plan-node-hard-block` off `dev`.
+**Built:** Updated `plan_node.py` with structured `require_plan` and `count_features` containing logic for imperative verbs, conjunctions, URLs, and file paths. Modified `agent_runtime.py` to hard block before the ReAct loop and return the rejection reason. Added tests in `tests/test_plan_node.py` and `doctor.py` check.
+**Verified:** Tests passing, doctor passing.
+**Modified:** `plan_node.py`, `agent_runtime.py`, `aureon_agent/doctor.py`, `tests/test_plan_node.py`, `tasks/todo.md`, `tasks/DEVLOG.md`.
+
 ## 2026-07-13 — Phase 6.5: Subagent dispatch (local session)
 **Did:** Built `delegate_task` tool to dispatch parallel work to a subagent (`claude-code` CLI), complete with sandboxing and audit logging. Branched `feat/aureon-agent-subagent-dispatch` off `dev`.
 **Built:** `aureon_agent/subagent/` package (`base.py`, `task.py`, `sandbox.py`, `claude_code.py`, `log.py`, `tool.py`, `__init__.py`). Added `aureon-agent subagent-log` CLI and `check_claude_cli` doctor check. Registered `delegate_task` in `agent_runtime.py`.

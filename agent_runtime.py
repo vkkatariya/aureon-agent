@@ -7,7 +7,7 @@ import re
 import httpx
 
 from context_builder import build_system_prompt
-from plan_node import check_plan
+from plan_node import require_plan
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +43,9 @@ class AgentRuntime:
 
         last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
-        plan_warning = await check_plan(self.workspace_dir, last_user)
-        if plan_warning:
-            logger.warning(plan_warning)
+        ok, reason = require_plan(self.workspace_dir, last_user)
+        if not ok:
+            return reason
 
         system_prompt = await build_system_prompt(self.workspace_dir, self.skills, self.memory)
         if _DESTRUCTIVE_RE.search(last_user):
