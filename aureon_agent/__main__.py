@@ -59,6 +59,32 @@ def cmd_tool_log(args):
         )
     console.print(table)
 
+def cmd_clarify_log(args):
+    from aureon_agent.tools.log import get_recent_tool_logs
+    # Fetch more logs and filter for clarify
+    logs = [log for log in get_recent_tool_logs(limit=args.last * 10) if log['tool_name'] == 'clarify'][:args.last]
+    if not logs:
+        print("No clarify logs found.")
+        return
+    
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title=f"Recent Clarifications (Last {len(logs)})")
+    table.add_column("ID")
+    table.add_column("Timestamp")
+    table.add_column("Inputs", overflow="fold")
+    table.add_column("Result", overflow="fold")
+    
+    for row in logs:
+        table.add_row(
+            str(row['id']),
+            row['timestamp'],
+            row['inputs'],
+            row['result']
+        )
+    console.print(table)
+
 def cmd_version(args):
     print(f"aureon-agent v{__version__}")
 
@@ -93,6 +119,10 @@ def main():
     p_tool_log = subparsers.add_parser("tool-log", help="Show tool usage audit log")
     p_tool_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
     
+    # clarify-log
+    p_clarify_log = subparsers.add_parser("clarify-log", help="Show clarification log")
+    p_clarify_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
+    
     # version
     p_version = subparsers.add_parser("version", help="Print version")
     
@@ -125,6 +155,8 @@ def main():
         cmd_logs(args)
     elif args.command == "tool-log":
         cmd_tool_log(args)
+    elif args.command == "clarify-log":
+        cmd_clarify_log(args)
     elif args.command == "version":
         cmd_version(args)
 

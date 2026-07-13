@@ -57,8 +57,10 @@ class AgentRuntime:
         from aureon_agent.tools.terminal import terminal_tool
         from aureon_agent.tools.file import FileTool
         from aureon_agent.tools.web import web_search, web_fetch
+        from aureon_agent.tools.todo import TodoTool
+        from aureon_agent.tools.clarify import clarify_tool
         
-        # Add Tier 1 tools
+        # Add Tier 1 and Tier 2 tools
         tools.extend([
             {
                 "name": "terminal",
@@ -131,6 +133,54 @@ class AgentRuntime:
                     },
                     "required": ["url"]
                 }
+            },
+            {
+                "name": "todo_read",
+                "description": "Read the current plan/todo list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"}
+                    }
+                }
+            },
+            {
+                "name": "todo_write",
+                "description": "Overwrite or append to the current plan/todo list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"},
+                        "content": {"type": "string", "description": "Content to write"},
+                        "append": {"type": "boolean", "description": "True to append, False to overwrite"}
+                    },
+                    "required": ["content"]
+                }
+            },
+            {
+                "name": "todo_add",
+                "description": "Add a new item to the plan/todo list (appends as a checklist item).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"},
+                        "item": {"type": "string", "description": "The item to add"}
+                    },
+                    "required": ["item"]
+                }
+            },
+            {
+                "name": "clarify",
+                "description": "Ask the Captain a clarifying question before proceeding. Blocks execution until answered.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question to ask"},
+                        "options": {"type": "array", "items": {"type": "string"}, "description": "Optional multiple choice options"},
+                        "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 300)"}
+                    },
+                    "required": ["question"]
+                }
             }
         ])
 
@@ -166,6 +216,14 @@ class AgentRuntime:
                         tool_result = await web_search(args.get("query"), args.get("max_results", 5))
                     elif tool_name == "web_fetch":
                         tool_result = await web_fetch(args.get("url"), args.get("max_chars", 5000))
+                    elif tool_name == "todo_read":
+                        tool_result = TodoTool.todo_read(args.get("path", "tasks/todo.md"))
+                    elif tool_name == "todo_write":
+                        tool_result = TodoTool.todo_write(args.get("path", "tasks/todo.md"), args.get("content"), args.get("append", False))
+                    elif tool_name == "todo_add":
+                        tool_result = TodoTool.todo_add(args.get("path", "tasks/todo.md"), args.get("item"))
+                    elif tool_name == "clarify":
+                        tool_result = await clarify_tool(context_obj, args.get("question"), args.get("options"), args.get("timeout_sec", 300))
                     else:
                         tool_result = await self.skills.execute_tool(
                             tool_name, args,
