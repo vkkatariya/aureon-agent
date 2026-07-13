@@ -1,0 +1,1 @@
+/home/radxa/.openclaw/workspace/MENTAL-MODEL-TEMPLATE.md

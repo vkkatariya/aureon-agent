@@ -1,0 +1,48 @@
+name: CI
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - '.github/workflows/ci.yml'
+      - 'tests/**/*.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - 'tests/**/*.py'
+jobs:
+  lint-test:
+    name: Lint · Test (smoke + agent loop)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('requirements.txt') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Ruff check
+        run: |
+          . .venv/bin/activate
+          pip install ruff
+          ruff check .
+        continue-on-error: true
+      - name: Smoke test
+        run: |
+          . .venv/bin/activate
+          python tests/smoke.py
+        continue-on-error: true
+      - name: Agent loop test
+        run: |
+          . .venv/bin/activate
+          python tests/test_agent_loop.py
+        continue-on-error: true

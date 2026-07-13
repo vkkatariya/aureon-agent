@@ -1,0 +1,17 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+workspace/.openclaw/
+workspace/.pi/
+workspace/.venv-*/
+workspace/.trash/
+workspace/.clawhub/
+node_modules/
+.DS_Store
+*.log
+.pytest_cache/
