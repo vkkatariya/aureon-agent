@@ -131,3 +131,16 @@ Both backends expose tools to the LLM in the same Anthropic tool-use format. LLM
 - [ ] Decision doc in `docs/mcp-decision.md` (why hybrid, when to migrate)
 - [ ] Existing 8 OpenClaw skills still load and execute unchanged
 
+## Phase 8: Setup Script (CLI)
+- [ ] Sub-task 1: Add CLI deps + console script entry
+- [ ] Sub-task 2: Module skeleton
+- [ ] Sub-task 3: Typed config dataclass
+- [ ] Sub-task 4: TUI helpers
+- [ ] Sub-task 5: Step 1 — Existing config detection
+- [ ] Sub-task 6: Step 2 — Model + LLM provider
+- [ ] Sub-task 7: Step 3 — Telegram channel
+- [ ] Sub-task 8: Step 4 — Discord channel + health + daemon + skills
+- [ ] Sub-task 9: Doctor command
+- [ ] Sub-task 10: Postinstall command
+- [ ] Sub-task 11: Top-level CLI glue
+- [ ] Sub-task 12: README + docs

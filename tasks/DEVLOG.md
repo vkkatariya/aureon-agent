@@ -3,6 +3,13 @@
 
 ---
 
+## 2026-07-13 — Phase 8: Setup script (local session)
+**Did:** Built all files from Phase 8 setup script (sub-tasks 1-12), on top of Phase 0-5. Branched `feat/aureon-agent-setup-script` off `dev`.
+**Built:** `aureon_agent/__init__.py`, `__main__.py` (CLI glue with argparse), `config.py` (dataclass, `python-dotenv`), `tui.py` (Rich/Questionary helpers), `setup.py` (interactive wizard with model/channel/daemon steps), `doctor.py` (health checks), `postinstall.py`. Added `rich` and `questionary` to `requirements.txt`.
+**Verified:** `aureon-agent doctor` runs perfectly. `aureon-agent setup` tested via `test_setup.py`. `tests/smoke.py` and `tests/test_agent_loop.py` pass.
+**Next:** Captain to run `aureon-agent setup` to complete the configuration and verify the systemd daemon.
+**Modified:** `pyproject.toml`, `requirements.txt`, `tasks/todo.md`, `README.md`, `docs/setup-script.md`, `aureon_agent/*`, `tests/test_*.py`.
+
 ## 2026-07-13 — Phase 2-5: core runtime, channels, entry, verification (local session)
 **Did:** Built all remaining files from tasks/kickoff-aureon-agent.md Phases 2-5 (sub-tasks 3-14), on top of the Phase 0/1 setup already merged into `dev`. Branched `feat/aureon-agent-bootstrap` off `dev` (not `main` — `main` was stale, missing the vendored tiny-openclaw reference and DEVLOG/todo/lessons scaffolding that already live on `dev`).
 **Built:** `memory.py` + `session_manager.py` (aiosqlite, WAL, per-session_id asyncio.Lock), `skill_loader.py` (PyYAML frontmatter parsing, hot-reload via watchfiles), `context_builder.py` (SOUL+IDENTITY+skills+notes+time, ~1.3K tokens measured), `agent_runtime.py` (ReAct loop against Ollama's OpenAI-compat streaming endpoint, MAX_TOOL_ROUNDS=5, local→cloud fallback on connect/timeout, auto-clarity override regex for destructive commands), `plan_node.py` (soft warning, logs only), `lessons.py` (append-only, newest-first, matches the doctrine template at `~/.openclaw/workspace/tasks/lessons.md`), `channels/{base,router,telegram,discord}.py` (Router owns session bookkeeping + `/lesson` command; adapters own platform I/O, streaming throttle, chunking), `main.py` (wires everything, SIGINT/SIGTERM, optional 127.0.0.1 health endpoint), `tests/{smoke,test_agent_loop}.py`.

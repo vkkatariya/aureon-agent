@@ -1,3 +1,20 @@
+Metadata-Version: 2.4
+Name: aureon-agent
+Version: 0.1.0
+Summary: Hermes-flavored autonomous AI agent
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.27
+Requires-Dist: python-telegram-bot[rate-limiter]>=21.0
+Requires-Dist: discord.py>=2.3
+Requires-Dist: aiosqlite>=0.20
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: watchfiles>=0.21
+Requires-Dist: aiohttp>=3.9
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: questionary>=2.0.0
+
 # aureon-agent
 
 Hermes-flavored autonomous AI agent modeled on Tiny-OpenClaw's 8-component architecture, wired to your existing OpenClaw doctrine so every session knows who you are, how you work, and which sub-agent to route to.
@@ -34,35 +51,36 @@ User (Telegram / Discord)
    ↓ back up the chain
 ```
 
-## Setup & First Install
+## Setup
 
 ```bash
-git clone git@github.com:vkkatariya/aureon-agent.git
-cd aureon-agent
+cd ~/dev-shared/projects/aureon-agent
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-aureon-agent postinstall
-aureon-agent setup
+pip install -r requirements.txt
 ```
 
-## Commands
+## Configuration
 
-- **Start:** `aureon-agent start` or simply `aureon-agent`
-- **Reconfigure:** `aureon-agent setup --section channel`
-- **Reset:** `aureon-agent setup --reset`
-- **Non-interactive:** `aureon-agent setup --non-interactive --telegram-bot-token "$TG" --telegram-allowed-chats 723865496`
-- **Check health:** `aureon-agent doctor`
-- **Stop daemon:** `aureon-agent stop`
-- **Tail logs:** `aureon-agent logs`
+Create `.env` (gitignored):
 
-## Setup Script Behavior
+```bash
+TELEGRAM_BOT_TOKEN=<from @BotFather>
+DISCORD_BOT_TOKEN=<from Discord Developer Portal, optional>
+TELEGRAM_ALLOWED_CHATS=<comma-separated chat IDs, blank = deny all>
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1   # primary
+OLLAMA_CLOUD_BASE_URL=https://ollama.com/v1 # fallback if primary is unreachable
+OLLAMA_API_KEY=<from ollama.com, optional for local>
+OLLAMA_MODEL=minimax-m2.5:cloud   # local proxy alias; use minimax-m3 against https://ollama.com/v1
+HEALTH_PORT=7777   # optional, 127.0.0.1 only
+LOG_LEVEL=INFO
+```
 
-The `aureon-agent setup` wizard supports multiple modes:
-- **Interactive (default):** Prompts for each value, offering to keep, modify, or reset existing configs.
-- **Quick (`--quick`):** Skips sections that already have a valid configuration, only prompting for missing values.
-- **Non-interactive (`--non-interactive`):** Bypasses all TUI prompts. Reuses existing config or relies entirely on command-line flags (e.g., `--telegram-bot-token`) and environment variables.
-- **Reset (`--reset`):** Destroys the current configuration and starts fresh. Destructive action requires confirmation.
+## Run
+
+```bash
+python main.py
+```
 
 ## Workspace
 
