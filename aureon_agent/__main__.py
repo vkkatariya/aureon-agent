@@ -85,6 +85,42 @@ def cmd_clarify_log(args):
         )
     console.print(table)
 
+def cmd_subagent_log(args):
+    from aureon_agent.subagent.log import get_recent_subagent_logs
+    logs = get_recent_subagent_logs(limit=args.last)
+    if not logs:
+        print("No subagent logs found.")
+        return
+        
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title=f"Recent Subagent Dispatches (Last {len(logs)})")
+    table.add_column("Task ID")
+    table.add_column("Created At")
+    table.add_column("Backend")
+    table.add_column("Tokens")
+    table.add_column("Duration")
+    table.add_column("Status")
+    table.add_column("Summary", overflow="fold")
+    
+    import datetime
+    for row in logs:
+        dt = datetime.datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')
+        summary = row['result_summary']
+        if len(summary) > 50:
+            summary = summary[:47] + "..."
+        table.add_row(
+            row['task_id'],
+            dt,
+            row['backend'],
+            str(row['token_count']),
+            f"{row['duration_sec']:.1f}s",
+            str(row['exit_code']),
+            summary
+        )
+    console.print(table)
+
 def cmd_version(args):
     print(f"aureon-agent v{__version__}")
 
@@ -123,6 +159,10 @@ def main():
     p_clarify_log = subparsers.add_parser("clarify-log", help="Show clarification log")
     p_clarify_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
     
+    # subagent-log
+    p_subagent_log = subparsers.add_parser("subagent-log", help="Show subagent dispatch log")
+    p_subagent_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
+    
     # version
     p_version = subparsers.add_parser("version", help="Print version")
     
@@ -157,6 +197,8 @@ def main():
         cmd_tool_log(args)
     elif args.command == "clarify-log":
         cmd_clarify_log(args)
+    elif args.command == "subagent-log":
+        cmd_subagent_log(args)
     elif args.command == "version":
         cmd_version(args)
 

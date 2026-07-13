@@ -59,8 +59,9 @@ class AgentRuntime:
         from aureon_agent.tools.web import web_search, web_fetch
         from aureon_agent.tools.todo import TodoTool
         from aureon_agent.tools.clarify import clarify_tool
+        from aureon_agent.subagent import delegate_task_tool
         
-        # Add Tier 1 and Tier 2 tools
+        # Add Tier 1, Tier 2, and Tier 3 tools
         tools.extend([
             {
                 "name": "terminal",
@@ -181,6 +182,20 @@ class AgentRuntime:
                     },
                     "required": ["question"]
                 }
+            },
+            {
+                "name": "delegate_task",
+                "description": "Dispatch a subagent (using claude-code) to perform parallel work, research, or code review in a sandbox. Returns the result and any proposed file changes. Takes a few minutes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string", "description": "The task for the subagent"},
+                        "backend": {"type": "string", "description": "Backend to use (default claude-code)"},
+                        "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 300)"},
+                        "files_to_inspect": {"type": "array", "items": {"type": "string"}, "description": "Optional list of files to inspect"}
+                    },
+                    "required": ["description"]
+                }
             }
         ])
 
@@ -224,6 +239,8 @@ class AgentRuntime:
                         tool_result = TodoTool.todo_add(args.get("path", "tasks/todo.md"), args.get("item"))
                     elif tool_name == "clarify":
                         tool_result = await clarify_tool(context_obj, args.get("question"), args.get("options"), args.get("timeout_sec", 300))
+                    elif tool_name == "delegate_task":
+                        tool_result = await delegate_task_tool(context_obj, args.get("description"), args.get("backend", "claude-code"), args.get("timeout_sec", 300), args.get("files_to_inspect"))
                     else:
                         tool_result = await self.skills.execute_tool(
                             tool_name, args,
