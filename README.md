@@ -51,10 +51,12 @@ Create `.env` (gitignored):
 TELEGRAM_BOT_TOKEN=<from @BotFather>
 DISCORD_BOT_TOKEN=<from Discord Developer Portal, optional>
 TELEGRAM_ALLOWED_CHATS=<comma-separated chat IDs, blank = deny all>
-OLLAMA_BASE_URL=https://ollama.com/v1   # or http://127.0.0.1:11434/v1
+OLLAMA_BASE_URL=http://127.0.0.1:11434/v1   # primary
+OLLAMA_CLOUD_BASE_URL=https://ollama.com/v1 # fallback if primary is unreachable
 OLLAMA_API_KEY=<from ollama.com, optional for local>
-OLLAMA_MODEL=minimax-m3
+OLLAMA_MODEL=minimax-m2.5:cloud   # local proxy alias; use minimax-m3 against https://ollama.com/v1
 HEALTH_PORT=7777   # optional, 127.0.0.1 only
+LOG_LEVEL=INFO
 ```
 
 ## Run

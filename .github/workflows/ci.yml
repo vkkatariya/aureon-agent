@@ -3,16 +3,14 @@ on:
   push:
     branches: [main, dev]
     paths:
-      - '*.py'
+      - '**/*.py'
       - 'requirements*.txt'
       - '.github/workflows/ci.yml'
-      - 'tests/**/*.py'
   pull_request:
     branches: [main]
     paths:
-      - '*.py'
+      - '**/*.py'
       - 'requirements*.txt'
-      - 'tests/**/*.py'
 jobs:
   lint-test:
     name: Lint · Test (smoke + agent loop)
@@ -34,7 +32,7 @@ jobs:
         run: |
           . .venv/bin/activate
           pip install ruff
-          ruff check .
+          ruff check . --exclude .venv --exclude references
         continue-on-error: true
       - name: Smoke test
         run: |
