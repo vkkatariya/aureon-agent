@@ -131,3 +131,70 @@ Both backends expose tools to the LLM in the same Anthropic tool-use format. LLM
 - [ ] Decision doc in `docs/mcp-decision.md` (why hybrid, when to migrate)
 - [ ] Existing 8 OpenClaw skills still load and execute unchanged
 
+## Phase 8: Interactive setup script (`aureon-agent setup`)
+
+**Goal:** Mirror OpenClaw `onboard` + Hermes `setup` patterns. Single command to install + configure + start the agent end-to-end. No prior knowledge of `.env`, venvs, or systemd required.
+
+**Stack:** Python 3.12 + `rich` (TUI) + `questionary` (prompts). Linux-only daemon (systemd user unit). English only. Plaintext `.env` secrets (chmod 600) for v1.
+
+**Modes:** `interactive` (default) | `--quick` (only missing/unset) | `--non-interactive` (use defaults/env) | `--reset` (wipe config via `trash`)
+
+**Sections** (run individually via `--section <name>`): `model | channel | daemon | skills | workspace | all`
+
+**Console scripts** (added via `pyproject.toml` `[project.scripts]`):
+- `aureon-agent` — top-level CLI (default: `start`)
+- `aureon-agent-setup` — interactive setup wizard
+- `aureon-agent-doctor` — health check (runs `tests/smoke.py` + probes)
+- `aureon-agent-postinstall` — dep bootstrap (venv, pip install, ollama check)
+
+**Sub-task 1: Foundation**
+- [ ] Add `rich` + `questionary` to `requirements.txt`
+- [ ] Create `aureon_agent/` package: `__init__.py`, `__main__.py`, `cli.py`, `setup.py`, `doctor.py`, `postinstall.py`, `config.py`, `tui.py`
+- [ ] Move `main.py` → `aureon_agent/cli.py`, back-compat shim keeps `python main.py` working
+- [ ] Add `pyproject.toml` with console script entries
+- [ ] Verify `pip install -e .` + all console scripts work
+
+**Sub-task 2: Config layer**
+- [ ] `aureon_agent/config.py` — `@dataclass AureonConfig` with all settings, `from_env()`, `from_file()`, `save(path)`, `validate()`, `redact()`, `is_complete()`
+- [ ] `aureon_agent/tui.py` — Rich/Questionary helpers: `print_banner`, `confirm`, `select`, `checkbox`, `text`, `password`, `path`, `print_status`, `print_table`, `spinner`, `progress`
+- [ ] `tests/test_config.py` — round-trip, redaction, validation, missing fields
+- [ ] `tests/test_setup.py` — mocked TUI flow
+
+**Sub-task 3: Wizard steps (5-8 from kickoff)**
+- [ ] Step 1: existing config detection (Keep | Modify | Reset via `trash`)
+- [ ] Step 2: model + LLM provider (Ollama local/cloud, API key, model selection, optional connection test)
+- [ ] Step 3: Telegram channel (token, `getMe` validation, allowlist, optional `getUpdates` chat_id extraction, optional handshake)
+- [ ] Step 4: Discord (optional, skip per Captain) + health port + log level + skills list + systemd daemon install
+- [ ] systemd unit template at `systemd/aureon-agent.service`, generate to `~/.config/systemd/user/` on install
+- [ ] `loginctl enable-linger $USER` check (warn if not enabled, per OpenClaw pattern)
+
+**Sub-task 4: Doctor + postinstall + top-level glue (9-12 from kickoff)**
+- [ ] `aureon_agent/doctor.py` — Python version, venv, .env perms, workspace symlinks, Ollama probe, Telegram probe, systemd status, runs `tests/smoke.py`. Rich table output. Exit 0/1/2.
+- [ ] `aureon_agent/postinstall.py` — Python version check, venv create, pip install, Ollama check (offer install instructions, don't actually install system packages)
+- [ ] `aureon_agent/__main__.py` — subcommand parser: `setup | postinstall | doctor | start | stop | status | logs | version | help`
+- [ ] `start` = run bot in foreground; `stop`/`status`/`logs` = systemd wrapper; `version` = print version
+- [ ] Update `README.md` with new command surface + setup-script behavior section
+- [ ] Add `docs/setup-script.md` matching OpenClaw's `wizard.md` structure (sections, modes, examples)
+- [ ] Update `CLAUDE.md` Commands section to reference new top-level commands
+
+**Acceptance criteria:**
+- [ ] `aureon-agent setup` walks a new Captain through first install end-to-end
+- [ ] `aureon-agent setup --non-interactive` works without TTY
+- [ ] `aureon-agent setup --quick` only prompts for unset fields
+- [ ] `aureon-agent setup --reset` confirms destructive action, uses `trash` not `rm`
+- [ ] `aureon-agent doctor` exits 0 on healthy live system
+- [ ] systemd service live, survives `systemctl --user restart`, `aureon-agent logs` shows Telegram polling
+- [ ] Existing Telegram round-trip still works after the refactor
+- [ ] All new/modified tests pass: `tests/test_config.py`, `tests/test_setup.py`, `tests/test_doctor.py`, `tests/smoke.py`, `tests/test_agent_loop.py`
+- [ ] README updated, `docs/setup-script.md` matches OpenClaw wizard.md structure
+- [ ] PR opened to `dev`, DEVLOG entry written
+
+**Out of scope (v1):** non-Linux daemon, i18n, SecretRef/external vault, OAuth flows, multi-agent routing, web search picker, auto-update, TUI mouse support, workspace reset (would nuke Captain's OpenClaw state via symlink).
+
+**Full spec:** `tasks/kickoff-setup-script.md` (18KB, 12 sub-tasks detailed)
+
+**References:**
+- OpenClaw docs: `~/.npm-global/lib/node_modules/openclaw/docs/start/{wizard,wizard-cli-reference,wizard-cli-automation,setup}.md`
+- Hermes: `hermes setup --help`, `hermes postinstall --help`
+- OpenClaw health check: `~/.openclaw/workspace/scripts/openclaw-health.sh`
+
