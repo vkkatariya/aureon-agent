@@ -14,6 +14,7 @@ class ChannelRouter:
         self.sessions = session_manager
         self.workspace_dir = workspace_dir
         self.channels = {}
+        self.pending_confirmations = {}  # session_id -> asyncio.Future
 
     def register(self, name, channel):
         self.channels[name] = channel
@@ -26,7 +27,23 @@ class ChannelRouter:
 
     async def handle_message(self, channel_name, client_id, text, callbacks):
         session_id = await self.sessions.get_or_create_session(client_id, channel_name)
+        
+        # Check if there is a pending confirmation for this session
+        if session_id in self.pending_confirmations:
+            future = self.pending_confirmations[session_id]
+            if not future.done():
+                future.set_result(text)
+                return None # Consumed by confirmation
+
         await self.sessions.add_message(session_id, "user", text)
+        
+        # We also need to inject channel info into the context for tools
+        if "context" not in callbacks:
+            callbacks["context"] = {}
+        callbacks["context"]["router"] = self
+        callbacks["context"]["session_id"] = session_id
+        callbacks["context"]["channel_name"] = channel_name
+        callbacks["context"]["client_id"] = client_id
 
         if text.strip().startswith("/lesson"):
             response = await self._handle_lesson_command(text)
