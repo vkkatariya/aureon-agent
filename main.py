@@ -15,7 +15,7 @@ from memory import Memory
 from session_manager import SessionManager
 from skill_loader import SkillLoader
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
