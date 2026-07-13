@@ -71,6 +71,8 @@ This is a **local-first agent**, not a SaaS. It runs on athena (homelab), talks 
 - **2026-07-13:** Project bootstrapped. Doctrine symlinked. SQLite chosen over JSON. Ollama + cloud fallback chosen over Anthropic hardcode. Telegram + Discord chosen over multi-platform (5 channels would dilute focus). Caveman mode already-on in `~/.hermes/config.yaml`.
 - **2026-07-13:** Plan-node check is **soft warning** in v1 (not block). Full block in v2.
 - **2026-07-13:** Subagent dispatch reuses Hermes `delegate_task` (no new subagent runtime).
+- **2026-07-13:** All 8 shipped OpenClaw skills are prose-only SKILL.md (no `handler.py`) — not the Tiny-OpenClaw `tools`+`execute()` shape the kickoff spec assumed. `skill_loader.py` supports both: real `handler.py` skills load as executable tools; prose-only skills get one synthesized `read_skill_<name>` tool that returns the skill body on demand.
+- **2026-07-13:** Default `OLLAMA_MODEL` is `minimax-m2.5:cloud`, not `minimax-m3` — the local Ollama endpoint (`http://127.0.0.1:11434/v1`, the default `OLLAMA_BASE_URL`) only proxies `minimax-m2.5:cloud` / `gemma4:31b-cloud`. `minimax-m3` only exists on the `ollama-cloud` provider (`https://ollama.com/v1`, needs `OLLAMA_API_KEY`).
 
 ## What's NOT in v1
 

@@ -17,25 +17,25 @@
 - [x] Sub-task 1: Workspace symlinks (all 11 wired to ~/.openclaw/workspace/)
 - [x] Sub-task 2: Project bootstrap files (AGENTS.md, CONTEXT.md, AGENTS.md, README.md, .gitignore, requirements.txt)
 
-## Phase 2: Core runtime (Tiny-OpenClaw ports)
-- [ ] Sub-task 3: Memory + Session (SQLite) — aiosqlite, WAL mode, asyncio.Lock per session_id
-- [ ] Sub-task 4: Skill loader (OpenClaw format) — parse SKILL.md frontmatter, watchfiles hot-reload
-- [ ] Sub-task 5: Context builder (doctrine-aware) — load SOUL/IDENTITY/skills/note:* + time, <2K tokens
-- [ ] Sub-task 6: Agent runtime (Ollama + streaming + plan-node soft check) — ReAct loop, MAX_TOOL_ROUNDS=5, caveman in replies, auto-clarity
+## Phase 2: Core runtime (Tiny-OpenClaw ports) ✅
+- [x] Sub-task 3: Memory + Session (SQLite) — aiosqlite, WAL mode, asyncio.Lock per session_id
+- [x] Sub-task 4: Skill loader (OpenClaw format) — parses SKILL.md frontmatter (PyYAML); prose-only skills (all 8 current) get a synthesized `read_skill_<name>` tool; handler.py-based code skills (none yet) still supported; watchfiles hot-reload
+- [x] Sub-task 5: Context builder (doctrine-aware) — SOUL + IDENTITY + skills menu + note:* + time, ~1.3K tokens measured
+- [x] Sub-task 6: Agent runtime (Ollama + streaming + plan-node soft check) — ReAct loop, MAX_TOOL_ROUNDS=5, cloud fallback on connect/timeout errors, auto-clarity override for destructive patterns
 
-## Phase 3: Channel adapters (multi-channel)
-- [ ] Sub-task 7: Channel ABC + Router
-- [ ] Sub-task 8: Telegram adapter (python-telegram-bot, chat ID allowlist, streaming editMessageText)
-- [ ] Sub-task 9: Discord adapter (discord.py, DM-only, streaming message.edit)
+## Phase 3: Channel adapters (multi-channel) ✅
+- [x] Sub-task 7: Channel ABC + Router (router owns session bookkeeping + `/lesson` command; adapters own platform I/O)
+- [x] Sub-task 8: Telegram adapter (python-telegram-bot, chat ID allowlist, streaming editMessageText throttled 1/sec, 4096-char chunking)
+- [x] Sub-task 9: Discord adapter (discord.py, DM-only, streaming message.edit throttled 1/sec, 2000-char chunking)
 
-## Phase 4: Entry + integration
-- [ ] Sub-task 10: main.py (env load, wire all 7, SIGTERM, health endpoint)
-- [ ] Sub-task 11: Plan-node module (soft-warning helper)
-- [ ] Sub-task 12: Lessons writer (append to workspace/tasks/lessons.md)
+## Phase 4: Entry + integration ✅
+- [x] Sub-task 10: main.py (env load, wires Memory+Sessions+Skills+Agent+Router+channels, SIGINT/SIGTERM, optional 127.0.0.1 health endpoint)
+- [x] Sub-task 11: Plan-node module (soft-warning helper, logs `plan_node_miss`, doesn't block)
+- [x] Sub-task 12: Lessons writer (append to workspace/tasks/lessons.md, newest-first; wired to `/lesson <text>` in the router)
 
-## Phase 5: Verification
-- [ ] Sub-task 13: Smoke tests (skill load, DB roundtrip, context builder, agent loop)
-- [ ] Sub-task 14: Dev workflow docs (README update, DEVLOG, root ~/dev-shared/notes link)
+## Phase 5: Verification ✅
+- [x] Sub-task 13: Smoke tests (`tests/smoke.py`) + agent loop e2e (`tests/test_agent_loop.py`) — both run and pass live against local Ollama (`minimax-m2.5:cloud` via the local proxy)
+- [x] Sub-task 14: Dev workflow docs — README env vars updated (added `OLLAMA_CLOUD_BASE_URL`, corrected default model), DEVLOG entry pending commit
 
 ## Phase 6: Production hardening (post-MVP)
 - [ ] systemd user service at ~/.config/systemd/user/aureon-agent.service
