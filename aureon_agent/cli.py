@@ -13,6 +13,7 @@ from aureon_agent.pidlock import acquire_lock, install_signal_handlers, release_
 from channels.discord import DiscordChannel
 from channels.router import ChannelRouter
 from channels.telegram import TelegramChannel
+from compaction.log import CompactionLog
 from memory import Memory
 from session_manager import SessionManager
 from skill_loader import SkillLoader
@@ -76,6 +77,9 @@ async def main():
     await skills.load()
     reload_task = asyncio.create_task(skills.watch())
 
+    compaction_log = CompactionLog(os.path.join(DATA_DIR, "compaction_log.db"))
+    await compaction_log.connect()
+
     agent = AgentRuntime(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
         api_key=os.getenv("OLLAMA_API_KEY"),
@@ -85,6 +89,7 @@ async def main():
         memory=memory,
         fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1"),
         fallback_api_key=os.getenv("OLLAMA_API_KEY"),
+        compaction_log=compaction_log,
     )
 
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
@@ -131,6 +136,7 @@ async def main():
         await health_runner.cleanup()
     await sessions.close()
     await memory.close()
+    await compaction_log.close()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import os
 import sys
 import subprocess
 
@@ -7,6 +9,36 @@ from aureon_agent.cli import main as run_start
 from aureon_agent.setup import main as run_setup
 from aureon_agent.doctor import main as run_doctor
 from aureon_agent.postinstall import main as run_postinstall
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
+
+def cmd_compaction_log(args):
+    from compaction.log import CompactionLog
+    from aureon_agent.tui import print_table
+
+    async def _run():
+        log = CompactionLog(os.path.join(DATA_DIR, "compaction_log.db"))
+        await log.connect()
+        try:
+            runs = await log.list_recent(session_id=args.session, model=args.model, limit=args.last)
+        finally:
+            await log.close()
+        if not runs:
+            print("No compaction runs recorded.")
+            return
+        rows = [
+            [r.session_id, f"{r.created_at:.0f}", str(r.tokens_before), str(r.tokens_after),
+             r.model_used, str(r.context_window_used), r.status]
+            for r in runs
+        ]
+        print_table(
+            ["Session", "Created At", "Tokens Before", "Tokens After", "Model", "Context Window", "Status"],
+            rows, title="Compaction Runs",
+        )
+
+    asyncio.run(_run())
 
 def cmd_stop(args):
     subprocess.run(["systemctl", "--user", "stop", "aureon-agent.service"], check=False)
@@ -50,7 +82,13 @@ def main():
     
     # logs
     p_logs = subparsers.add_parser("logs", help="Tail systemd logs")
-    
+
+    # compaction-log
+    p_compaction_log = subparsers.add_parser("compaction-log", help="Show session compaction audit log")
+    p_compaction_log.add_argument("--last", type=int, default=10, help="Number of runs to show (default 10)")
+    p_compaction_log.add_argument("--session", default=None, help="Filter by session_id")
+    p_compaction_log.add_argument("--model", default=None, help="Filter by model_used")
+
     # version
     p_version = subparsers.add_parser("version", help="Print version")
     
@@ -81,6 +119,8 @@ def main():
         cmd_status(args)
     elif args.command == "logs":
         cmd_logs(args)
+    elif args.command == "compaction-log":
+        cmd_compaction_log(args)
     elif args.command == "version":
         cmd_version(args)
 

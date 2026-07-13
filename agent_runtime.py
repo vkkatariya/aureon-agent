@@ -1,17 +1,27 @@
 """ReAct loop against Ollama's OpenAI-compat endpoint, with streaming, plan-node soft
-check, and auto-clarity override for destructive-action messages."""
+check, auto-clarity override for destructive-action messages, and model-aware
+session compaction (view-layer only — never rewrites session_manager's messages)."""
 import json
 import logging
+import os
 import re
 
 import httpx
 
+from aureon_agent.models import get_context_window
+from compaction.counter import count_tokens_messages, count_tokens_text, needs_compaction
+from compaction.log import CompactionRun
+from compaction.summarizer import Summarizer
+from compaction.threshold import compute_compact_threshold, compute_recent_verbatim_size
 from context_builder import build_system_prompt
+from lessons import append_lesson
 from plan_node import check_plan
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 5
+COMPACTION_SUMMARY_TAG = "[compacted-history-summary]"
+COMPACTION_SUMMARIZE_INPUT_CAP_TOKENS = 16_000
 
 _DESTRUCTIVE_RE = re.compile(
     r"rm\s+-rf|drop\s+table|force[\s-]push|push\s+--force|git\s+reset\s+--hard|truncate\b|mkfs\b",
@@ -27,7 +37,7 @@ AUTO_CLARITY_NOTE = (
 
 class AgentRuntime:
     def __init__(self, base_url, api_key, model, skill_loader, workspace_dir, memory,
-                 fallback_base_url=None, fallback_api_key=None):
+                 fallback_base_url=None, fallback_api_key=None, compaction_log=None):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
@@ -36,6 +46,10 @@ class AgentRuntime:
         self.memory = memory
         self.fallback_base_url = fallback_base_url.rstrip("/") if fallback_base_url else None
         self.fallback_api_key = fallback_api_key
+        self.compaction_log = compaction_log
+        self._summarizer = None
+        self.compactions_run_total = 0
+        self.compactions_skipped_total = 0
 
     async def run(self, history, session_id, callbacks):
         on_token = callbacks.get("on_token")
@@ -52,6 +66,7 @@ class AgentRuntime:
             system_prompt += f"\n\n---\n\n{AUTO_CLARITY_NOTE}"
 
         messages = [{"role": m["role"], "content": m["content"]} for m in history]
+        messages = await self._maybe_compact(messages, session_id, system_prompt)
         tools = self.skills.get_tools() if self.skills else []
 
         response_text = ""
@@ -85,6 +100,103 @@ class AgentRuntime:
             break
 
         return response_text
+
+    def _get_summarizer(self):
+        if self._summarizer is None:
+            model = os.getenv("AUREON_SUMMARY_MODEL", self.model)
+            self._summarizer = Summarizer(self.base_url, self.api_key, model)
+        return self._summarizer
+
+    @staticmethod
+    def _cap_tokens_tail(messages, max_tokens):
+        """Keep the tail (most recent) messages within a token budget — the
+        oldest-of-the-old matters least when we're already summarizing."""
+        capped = []
+        total = 0
+        for msg in reversed(messages):
+            tokens = count_tokens_text(msg.get("content") or "")
+            if capped and total + tokens > max_tokens:
+                break
+            capped.append(msg)
+            total += tokens
+        capped.reverse()
+        return capped
+
+    async def _maybe_compact(self, messages, session_id, system_prompt):
+        if os.getenv("AUREON_COMPACTION_ENABLED", "0").lower() not in ("1", "true"):
+            return messages
+
+        threshold = compute_compact_threshold(self.model, system_prompt)
+        if threshold <= 0:
+            self.compactions_skipped_total += 1
+            return messages
+
+        history_tokens = count_tokens_messages(messages)
+        if not needs_compaction(history_tokens, threshold):
+            return messages
+
+        try:
+            return await self._compact(messages, session_id, threshold, history_tokens)
+        except Exception as e:
+            logger.warning("compaction failed for %s (%s), proceeding with full history", session_id, e)
+            self.compactions_skipped_total += 1
+            return messages
+
+    async def _compact(self, messages, session_id, threshold, history_tokens):
+        recent_size = compute_recent_verbatim_size(threshold)
+        recent = self._cap_tokens_tail(messages, recent_size)
+        old = messages[:len(messages) - len(recent)]
+
+        if not old:
+            self.compactions_skipped_total += 1
+            return messages
+
+        summarizer = self._get_summarizer()
+        old_capped = self._cap_tokens_tail(old, COMPACTION_SUMMARIZE_INPUT_CAP_TOKENS)
+        summary_text = await summarizer.summarize(old_capped)
+
+        compacted = [{"role": "system", "content": f"{COMPACTION_SUMMARY_TAG} {summary_text}"}] + recent
+        tokens_after = count_tokens_messages(compacted)
+
+        if self.compaction_log:
+            await self.compaction_log.record(CompactionRun(
+                session_id=session_id,
+                tokens_before=history_tokens,
+                tokens_after=tokens_after,
+                summary_text=summary_text,
+                model_used=self.model,
+                context_window_used=get_context_window(self.model),
+                status="ok",
+            ))
+        self.compactions_run_total += 1
+        logger.info(
+            "compacted session %s: %d -> %d tokens (model=%s)",
+            session_id, history_tokens, tokens_after, self.model,
+        )
+        await self._log_compaction_lesson(session_id, history_tokens, tokens_after)
+        return compacted
+
+    async def _log_compaction_lesson(self, session_id, tokens_before, tokens_after):
+        """Self-improvement loop entry per compaction run (doctrine rule 3). Not a
+        mistake-correction — repurposes the lessons.md template to keep a running,
+        human-readable record of compaction quality since data/compaction_log.db
+        isn't doctrine-visible to Captain."""
+        reduction_pct = round((1 - tokens_after / tokens_before) * 100, 1) if tokens_before else 0
+        try:
+            await append_lesson(
+                self.workspace_dir,
+                context=f"Session compaction fired for {session_id} (model={self.model}).",
+                what_went_wrong="N/A — automatic view-layer compaction, not a correction.",
+                root_cause=f"History exceeded the model-aware token threshold for {self.model}.",
+                prevention_rule=(
+                    f"{tokens_before} -> {tokens_after} tokens ({reduction_pct}% reduction). "
+                    "Quality (did the conversation stay coherent after this point?) is not "
+                    "auto-verified — spot-check if the user reports confusion or repetition."
+                ),
+                title=f"Session compaction — {session_id}",
+            )
+        except Exception as e:
+            logger.warning("failed to write compaction lesson for %s: %s", session_id, e)
 
     async def _call_llm(self, system_prompt, messages, tools, on_token):
         body = {

@@ -134,6 +134,23 @@ sqlite3 data/memory.db "SELECT * FROM notes LIMIT 5;"
 rm data/*.db data/*.db-wal data/*.db-shm
 ```
 
+### Session compaction (view-layer, off by default)
+```bash
+# Enable model-aware history compaction (env flag, off by default)
+export AUREON_COMPACTION_ENABLED=1
+
+# Optional overrides
+export AUREON_RESERVED_RESPONSE_TOKENS=4096   # default
+export AUREON_SUMMARY_MODEL=minimax-m2.5:cloud  # defaults to the active runtime model
+
+# Inspect the compaction audit trail (separate DB, never touches sessions.db)
+python -m aureon_agent compaction-log --last 10
+python -m aureon_agent compaction-log --session telegram:123
+python -m aureon_agent compaction-log --model minimax-m2.5:cloud
+
+sqlite3 data/compaction_log.db "SELECT * FROM compaction_runs ORDER BY created_at DESC LIMIT 5;"
+```
+
 ### Channel testing (after Phase 3)
 ```bash
 # Telegram: check bot token, then send a test message

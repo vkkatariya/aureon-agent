@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-07-13 — Session compaction (local session, branch `feat/aureon-agent-session-compaction`)
+**Did:** Built model-aware session compaction per `tasks/kickoff-session-compaction.md` (confirmed doc, pure-docs commit `225143a` on `dev`, no prior code). Old turns get LLM-summarized once history exceeds a per-model token threshold; recent turns stay verbatim. View-layer only — `session_manager.py`'s `messages` table is never rewritten, compaction only reshapes what gets sent to the LLM per-call.
+**Built:**
+- `aureon_agent/models.py` (new): `MODEL_CONTEXT_WINDOWS` lookup table + `get_context_window(model)`, unknown-model fallback to 32K with a WARN log.
+- `compaction/counter.py` (new): `count_tokens_text`/`count_tokens_messages` via `tiktoken` `cl100k_base`, falls back to `len(text)//4` if tiktoken isn't importable. `needs_compaction(current, threshold)`.
+- `compaction/threshold.py` (new): `compute_compact_threshold(model, system_prompt)` = `context_window - 4096 (reserved response) - system_prompt_tokens`; returns 0 + ERROR log if system prompt >50% of context window (safety skip). `compute_recent_verbatim_size(threshold)` = `min(4000, threshold * 0.2)`.
+- `compaction/summarizer.py` (new): `Summarizer.summarize(messages)` — one LLM call (`httpx.AsyncClient`, OpenAI-compat `/chat/completions`), 300 max output tokens, 30s timeout, degraded fallback (truncated transcript, ≤500 chars) on timeout/error — never raises.
+- `compaction/log.py` (new): `CompactionLog` — append-only `aiosqlite` audit trail in **`data/compaction_log.db`** (separate file from `sessions.db`/`memory.db` by design). Records `tokens_before/after`, `summary_text`, `model_used`, `context_window_used`, `status`. `list_recent(session_id=, model=, limit=)` for querying.
+- `agent_runtime.py`: `run()` now calls `_maybe_compact(messages, session_id, system_prompt)` right after building the message list. `_maybe_compact`/`_compact` implement sliding-window + LLM-summary: recent-verbatim tail kept as-is, everything older collapsed into one `{"role": "system", "content": "[compacted-history-summary] ..."}` message. Fail-open: any error (timeout, missing model, system-prompt-too-big) logs and falls back to the full uncompacted history — compaction never breaks a live turn. Gated by `AUREON_COMPACTION_ENABLED` env flag, **off by default**. New counters `compactions_run_total`/`compactions_skipped_total`.
+- `aureon_agent/__main__.py`: `compaction-log` subcommand (`--last`, `--session`, `--model`) prints the audit trail as a Rich table.
+- `aureon_agent/doctor.py`: `check_compaction_log()` (DB readable, warns if stale >7 days idle) and `check_model_known()` (warns if active model isn't in `MODEL_CONTEXT_WINDOWS`) added to the health-check list.
+- `pyproject.toml`: added `"compaction"` to `[tool.setuptools] packages`. `requirements.txt`: added `tiktoken>=0.7`.
+**Test-writing gotcha:** naive `"x" * N` strings don't give `N/4` tokens under `cl100k_base` BPE — repeated characters compress far more (measured `"x"*8000` → 1000 tokens, an 8x ratio). Threshold tests needed a `_text_with_token_count(n)` helper (encode a base phrase → repeat/truncate ids to exactly `n` → decode) to get exact, not approximate, token counts. Even then, decode→re-encode can shift a BPE merge boundary by a few dozen tokens, so exact-threshold assertions measure the actual re-encoded system-prompt token count rather than hardcoding an assumed value.
+**Verified:** `pytest tests/` 24 passed (new: `test_compaction_counter.py`, `test_compaction_threshold.py`, `test_compaction_summarizer.py`, `test_compaction_integration.py` — hand-rolled fake `httpx.AsyncClient` context managers for LLM mocking, no `respx`/`pytest-asyncio` in this project). `python tests/smoke.py` 5/5 pass. Live-verified against the real local Ollama instance: 120 synthetic filler messages, `AUREON_COMPACTION_ENABLED=1` → compaction fired, 31320→3944 tokens, summary coherent, audit log recorded `context_window_used=32768` correctly (test DB deleted after). `python -m aureon_agent doctor` shows both new checks cleanly against the live `.env`/Telegram bot. `ruff check` clean on all new/modified files.
+**Deferred:** live-channel round-trip test (30+ real Telegram messages triggering auto-compaction, confirmed non-firing on a 1M-context model) — only verified via direct `_maybe_compact` calls so far, not through the Telegram adapter. Tracked in `tasks/todo.md`.
+**Next:** PR to `dev`. Then either the live-channel compaction test, or move to Phase 6 remainder (plan-node hard block, subagent dispatch) / Phase 7 (MCP first server).
+**Modified:** `aureon_agent/models.py` (new), `compaction/__init__.py` (new), `compaction/counter.py` (new), `compaction/threshold.py` (new), `compaction/summarizer.py` (new), `compaction/log.py` (new), `agent_runtime.py`, `aureon_agent/cli.py`, `aureon_agent/__main__.py`, `aureon_agent/doctor.py`, `pyproject.toml`, `requirements.txt`, `tests/test_compaction_*.py` (new, 4 files), `CLAUDE.md`, `tasks/todo.md`, `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-13 — PID lock + systemd unit install (local session, PR #9)
 **Did:** Fixed the "two bots on one token" problem that caused Telegram 409 Conflict errors. Two related fixes shipped together on `feat/aureon-agent-pid-lock-and-systemd`.
 **Built:**

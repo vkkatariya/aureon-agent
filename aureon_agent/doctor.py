@@ -1,15 +1,20 @@
+import asyncio
 import os
 import sys
 import subprocess
+import time
 import httpx
 from typing import Tuple
 
 from aureon_agent.config import AureonConfig
+from aureon_agent.models import MODEL_CONTEXT_WINDOWS
 from aureon_agent.tui import print_banner, print_table, print_status
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
 ENV_PATH = os.path.join(BASE_DIR, ".env")
+COMPACTION_LOG_PATH = os.path.join(BASE_DIR, "data", "compaction_log.db")
+COMPACTION_STALE_DAYS = 7
 
 def check_python() -> Tuple[str, str]:
     if sys.version_info >= (3, 12):
@@ -89,6 +94,41 @@ def check_systemd() -> Tuple[str, str]:
     except FileNotFoundError:
         return "🟡", "systemctl not found"
 
+def check_compaction_log() -> Tuple[str, str]:
+    if not os.path.exists(COMPACTION_LOG_PATH):
+        return "🟡", "No compaction runs yet"
+
+    async def _last_run():
+        from compaction.log import CompactionLog
+        log = CompactionLog(COMPACTION_LOG_PATH)
+        await log.connect()
+        try:
+            runs = await log.list_recent(limit=1)
+        finally:
+            await log.close()
+        return runs[0] if runs else None
+
+    try:
+        run = asyncio.run(_last_run())
+    except Exception as e:
+        return "❌", f"compaction_log.db unreadable: {e}"
+
+    if run is None:
+        return "🟡", "No compaction runs yet"
+
+    age_days = (time.time() - run.created_at) / 86400
+    if age_days > COMPACTION_STALE_DAYS:
+        return "🟡", f"Last compaction {age_days:.1f}d ago (session {run.session_id})"
+    return "✅", f"Last compaction {age_days:.1f}d ago (session {run.session_id})"
+
+
+def check_model_known() -> Tuple[str, str]:
+    config = AureonConfig.from_file(ENV_PATH)
+    if config.OLLAMA_MODEL in MODEL_CONTEXT_WINDOWS:
+        return "✅", f"{config.OLLAMA_MODEL} ({MODEL_CONTEXT_WINDOWS[config.OLLAMA_MODEL]} tokens)"
+    return "🟡", f"{config.OLLAMA_MODEL} not in MODEL_CONTEXT_WINDOWS — compaction will assume 32K"
+
+
 def check_smoke_tests() -> Tuple[str, str]:
     smoke_path = os.path.join(BASE_DIR, "tests", "smoke.py")
     if not os.path.exists(smoke_path):
@@ -115,6 +155,8 @@ def main():
         ("Ollama", check_ollama),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),
+        ("Compaction Log", check_compaction_log),
+        ("Model Registry", check_model_known),
         ("Smoke Tests", check_smoke_tests)
     ]
     
