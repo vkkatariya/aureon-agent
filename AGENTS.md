@@ -80,8 +80,8 @@ Stay silent when:
 
 Skills provide your tools. When you need one, check its `SKILL.md`:
 
-- OpenClaw skills: `workspace/skills/<name>/SKILL.md` (8 symlinked skills)
-- Hermes skills: `~/.hermes/skills/<name>/SKILL.md` (top-level + categorized)
+- Workspace skills: `workspace/skills/<name>/SKILL.md` (8 doctrine skills, symlinked from `~/.openclaw/workspace/skills/`)
+- Global skills: `~/.hermes/skills/<name>/SKILL.md` (top-level + categorized)
 
 ## When in doubt
 

@@ -7,7 +7,7 @@
 
 ## What this is
 
-A personal AI agent for Vishal ("Captain"). Telegram + Discord channels. Doctrine-aware (loads SOUL/USER/IDENTITY/WORKFLOW/MEMORY from `~/.openclaw/workspace/`). Modeled on Tiny-OpenClaw's 8-component architecture, with Hermes-flavored deltas (Ollama local + cloud, SQLite, streaming, multi-channel, plan-node soft check, subagent dispatch via `delegate_task`).
+A personal AI agent for Vishal ("Captain"). Telegram + Discord channels. Doctrine-aware (loads SOUL/USER/IDENTITY/WORKFLOW/MEMORY from `~/.openclaw/workspace/`). 8-component architecture (Ollama local + cloud, SQLite, streaming, multi-channel, plan-node soft check, subagent dispatch via `delegate_task`).
 
 ## Mental model
 
@@ -15,11 +15,11 @@ This is a **local-first agent**, not a SaaS. It runs on athena (homelab), talks 
 
 ## Stack
 
-- **Language:** Python 3.12 (async-first, OpenClaw convention)
+- **Language:** Python 3.12 (async-first)
 - **LLM:** Ollama via OpenAI-compat (`https://ollama.com/v1` for cloud, `http://127.0.0.1:11434/v1` for local)
 - **Telegram:** `python-telegram-bot[rate-limiter]`
 - **Discord:** `discord.py`
-- **DB:** `aiosqlite` (WAL mode) — matches your `openclaw.sqlite` pattern
+- **DB:** `aiosqlite` (WAL mode)
 - **HTTP:** `httpx` (async) for Ollama + tool calls
 - **File watching:** `watchfiles` for skill hot-reload
 - **Config:** `.env` via `python-dotenv` (never committed)
@@ -34,13 +34,13 @@ This is a **local-first agent**, not a SaaS. It runs on athena (homelab), talks 
 - **DB location:** `data/sessions.db`, `data/memory.db` (gitignored)
 - **No `0.0.0.0` binds.** Localhost or Tailscale only.
 
-## Architecture (8 components, ported from Tiny-OpenClaw)
+## Architecture (8 components)
 
 1. **Channel Router** — multiplexes Telegram + Discord into unified message stream
 2. **Channel adapters** — `channels/telegram.py`, `channels/discord.py`, ABC at `channels/base.py`
 3. **Session Manager** — SQLite-backed per-chat history, key=`f"{channel}:{client_id}"`
 4. **Memory** — SQLite-backed key-value, `note:*` namespace injected into system prompt
-5. **Skill Loader** — scans `workspace/skills/`, parses OpenClaw SKILL.md frontmatter, hot-reloads
+5. **Skill Loader** — scans `workspace/skills/`, parses SKILL.md frontmatter, hot-reloads
 6. **Context Builder** — assembles SOUL + IDENTITY + skills + memory + time into <2K token system prompt
 7. **Agent Runtime** — ReAct loop (MAX_TOOL_ROUNDS=5), Ollama streaming, plan-node soft check, caveman-aware
 8. **main.py** — wires all 7, handles SIGTERM, optional health endpoint
@@ -67,7 +67,7 @@ aureon-agent/
 ├── context_builder.py            # multi-source system prompt (Phase 2)
 ├── memory.py                     # SQLite Memory (Phase 2)
 ├── session_manager.py            # SQLite SessionManager (Phase 2)
-├── skill_loader.py               # OpenClaw SKILL.md format (Phase 2)
+├── skill_loader.py               # SKILL.md format (Phase 2)
 ├── plan_node.py                  # soft-warning helper (Phase 4)
 ├── lessons.py                    # append to workspace/tasks/lessons.md (Phase 4)
 ├── channels/
@@ -97,7 +97,7 @@ aureon-agent/
 - **No `print()` in production code** — use `logging` module (configured in main.py).
 - **No raw `open()` for SQLite** — go through `Memory` and `SessionManager` classes only.
 - **Tool results** must be JSON-serializable dicts, never raw exceptions.
-- **Skill frontmatter:** `name` + `description` (matches OpenClaw SKILL.md format). Optional `metadata`, `user-invocable`, `homepage`.
+- **Skill frontmatter:** `name` + `description`. Optional `metadata`, `user-invocable`, `homepage`.
 - **Skill handler signature:** `async def execute(tool_name: str, tool_input: dict, context: dict) -> dict` — `context` always has `session_id`, `memory`, optional `channel` + `client_id`.
 - **Channel reply size limits:** Telegram 4096 chars, Discord 2000 chars. Chunk on word boundaries.
 - **Streaming throttle:** 1 edit/sec per chat (Telegram `editMessageText`, Discord `message.edit`).
@@ -115,17 +115,17 @@ aureon-agent/
 | Claude Code (athena tmux) | Local coding session. SQLite, file edits, channel testing. | `CLAUDE.md` + `CONTEXT.md` + `tasks/DEVLOG.md` |
 | Claude Code (Anthropic cloud) | Cloud sibling. Skill load tests, lint, e2e audit. | Same as local (no secrets access) |
 | Opencode | Fast inline edits, hotfixes. | `CONTEXT.md` + `tasks/DEVLOG.md` |
-| Hermes | Plan/audit/scope gate. Triage PRs. | All of the above + `workspace/MEMORY.md` |
+| Plan/audit/scope gate | Triage PRs. | All of the above + `workspace/MEMORY.md` |
 
 ## Decision log
 
 - **2026-07-13:** Project bootstrapped. Doctrine symlinked. SQLite chosen over JSON. Ollama + cloud fallback chosen over Anthropic hardcode. Telegram + Discord chosen over multi-platform (5 channels would dilute focus). Caveman mode already-on in `~/.hermes/config.yaml`.
 - **2026-07-13:** Plan-node check is **soft warning** in v1 (not block). Full block in v2.
-- **2026-07-13:** Subagent dispatch reuses Hermes `delegate_task` (no new subagent runtime).
-- **2026-07-13:** All 8 shipped OpenClaw skills are prose-only SKILL.md (no `handler.py`) — not the Tiny-OpenClaw `tools`+`execute()` shape the kickoff spec assumed. `skill_loader.py` supports both: real `handler.py` skills load as executable tools; prose-only skills get one synthesized `read_skill_<name>` tool that returns the skill body on demand.
-- **2026-07-13:** Default `OLLAMA_MODEL` is `minimax-m2.5:cloud`, not `minimax-m3` — the local Ollama endpoint (`http://127.0.0.1:11434/v1`, the default `OLLAMA_BASE_URL`) only proxies `minimax-m2.5:cloud` / `gemma4:31b-cloud`. `minimax-m3` only exists on the `ollama-cloud` provider (`https://ollama.com/v1`, needs `OLLAMA_API_KEY`).
+- **2026-07-13:** Subagent dispatch reuses the `delegate_task` pattern (no new subagent runtime).
+- **2026-07-13:** All 8 shipped doctrine skills are prose-only SKILL.md (no `handler.py`). `skill_loader.py` supports both: real `handler.py` skills load as executable tools; prose-only skills get one synthesized `read_skill_<name>` tool that returns the skill body on demand.
+- **2026-07-13:** Default `OLLAMA_MODEL` is `minimax-m2.5:cloud`, not `minimax-m3` — the local Ollama endpoint (`http://127.0.0.1:11434/v1`, the default `OLLAMA_BASE_URL`) only proxies `minimax-m2.5:cloud` / `gemma4:31b-cloud`. `minimax-m3` only exists on the cloud provider (`https://ollama.com/v1`, needs `OLLAMA_API_KEY`).
 - **2026-07-13:** Tiny-OpenClaw reference vendored (pinned commit `a4cb8cb94`) at `references/tiny-openclaw/`. Offline-first, no network needed.
-- **2026-07-13:** GitHub repo public per Captain. Workflow symlink to `~/dev-shared/workflow/` added per audit (was missing). CLAUDE.md rewritten to match mature-project structure (~241 lines, up from 51). `main` + `dev` branch model per project-init skill.
+- **2026-07-13:** GitHub repo public. Workflow symlink to `~/dev-shared/workflow/` added per audit (was missing). CLAUDE.md rewritten to match mature-project structure (~241 lines, up from 51). `main` + `dev` branch model per project-init skill.
 
 ## What's NOT in v1
 
@@ -137,7 +137,7 @@ aureon-agent/
 - Server/group channel support
 - Plan-node hard block (soft warning only in v1)
 - Compaction of long sessions
-- Memory write from LLM (only via `memory_work` skill, like Tiny-OpenClaw)
+- Memory write from LLM (only via `memory_work` skill)
 - systemd user service (post-MVP)
 
 ## Key file paths

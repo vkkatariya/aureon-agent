@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate a pixel-style AUREON-AGENT banner SVG.
 
-Matches the Hermes-Agent banner aesthetic: blocky, retro-tech, sharp edges,
-big bold wordmark. Each letter rendered on a 5x7 pixel grid, scaled 12x.
+Pixel-art aesthetic: blocky, retro-tech, sharp edges, big bold wordmark.
+Each letter rendered on a 5x7 pixel grid, scaled 12x.
 
 Output: assets/banner.svg (one file, ~6-10 KB).
 """
@@ -140,7 +140,7 @@ def make_banner() -> str:
     pixel = 12
     gap = 1
     text = "AUREON-AGENT"
-    color_main = "#FF8A2B"  # warm orange (matches Hermes banner gradient)
+    color_main = "#FF8A2B"  # warm orange
     color_glow = "#FFB347"  # lighter highlight for drop shadow
     #    color_dark = "#1A1A1A"  # bg
 
@@ -157,9 +157,9 @@ def make_banner() -> str:
     main_rects, _, _ = render_text(text, pixel, "url(#mainGrad)", gap)
 
     svg = f'''<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {banner_w} {banner_h}" width="{banner_w}" height="{banner_h}" role="img" aria-label="AUREON-AGENT — Hermes-flavored autonomous AI agent">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {banner_w} {banner_h}" width="{banner_w}" height="{banner_h}" role="img" aria-label="AUREON-AGENT — personal AI agent">
   <title>AUREON-AGENT</title>
-  <desc>Pixel-style wordmark for aureon-agent, a personal AI agent built by Vishal Katariya. Modeled on Hermes Agent and OpenClaw.</desc>
+  <desc>Pixel-style wordmark for aureon-agent, a personal AI agent built by Vishal Katariya.</desc>
   <defs>
     <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0D0D0D"/>

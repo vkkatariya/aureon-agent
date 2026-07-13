@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="aureon-agent — Hermes-flavored autonomous AI agent" width="100%">
+  <img src="assets/banner.svg" alt="aureon-agent — personal AI agent" width="100%">
 </p>
 
 <p align="center">
@@ -12,14 +12,14 @@
   <a href="https://github.com/vkkatariya/aureon-agent"><img src="https://img.shields.io/badge/GitHub-vkkatariya%2Faureon--agent-181717?style=for-the-badge&logo=github" alt="GitHub"></a>
 </p>
 
-A **doctrine-aware** personal AI agent for [Vishal "Captain" Katariya](https://vishal-katariya.com). Runs on athena (Radxa Rock 5T, Tailscale-only), talks to you on Telegram, and routes complex work to coding sub-agents (claude-code, opencode, codex, abacus, agy, copilot). Modeled on [Tiny-OpenClaw](https://github.com/ashishbamania/Tiny-OpenClaw) and [OpenClaw](https://github.com/openclaw/openclaw), inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent) and the Olympus orchestration doctrine.
+A **doctrine-aware** personal AI agent for [Vishal "Captain" Katariya](https://vishal-katariya.com). Runs on athena (Radxa Rock 5T, Tailscale-only), talks to you on Telegram, and routes complex work to coding sub-agents (claude-code, opencode, codex, abacus, agy, copilot). 8-component architecture inspired by the Tiny-OpenClaw reference (vendored at `references/tiny-openclaw/`).
 
 | | |
 |---|---|
 | **LLM** | Ollama local (`http://127.0.0.1:11434/v1`) + cloud fallback (`https://ollama.com/v1`) |
 | **Channels** | Telegram (primary), Discord (optional) |
 | **Storage** | SQLite (sessions + memory) |
-| **Skills** | OpenClaw `SKILL.md` format (8 doctrine skills auto-loaded) |
+| **Skills** | `SKILL.md` format (8 doctrine skills auto-loaded) |
 | **Tools** | ReAct loop, MAX_TOOL_ROUNDS=5, streaming responses, plan-node soft check |
 | **Style** | Caveman `full` mode always-on in replies |
 | **Runtime** | Single Python process, `127.0.0.1` binds only, systemd user service |
@@ -57,7 +57,7 @@ aureon-agent stop         # stop the service
 - **Loads doctrine at startup.** `SOUL.md`, `USER.md`, `IDENTITY.md`, `WORKFLOW.md`, `MEMORY.md` from `~/.openclaw/workspace/` via symlinks. One source of truth, no drift.
 - **Calls tools via the ReAct loop.** Up to 5 tool rounds per turn. Skills are folders with `SKILL.md` + `handler.py`; agent dispatches via `skill_loader.py`.
 - **Soft warns on 3+ step tasks** without a `tasks/todo.md` plan (hard block in v2).
-- **Appends to lessons on correction** at `workspace/tasks/lessons.md` per the OpenClaw 6-rule contract.
+- **Appends to lessons on correction** at `workspace/tasks/lessons.md` per the per-project 6-rule contract.
 
 ## Architecture
 
@@ -75,7 +75,7 @@ Agent Runtime ← ReAct loop, MAX_TOOL_ROUNDS=5, streaming
    ↓ (if tool_use)
 Skill Loader ← scans workspace/skills/, parses SKILL.md, hot-reload
    ↓
-[Skill handlers] ← 8 OpenClaw doctrine skills (caveman, homelab-*, notion, ...)
+[Skill handlers] ← 8 doctrine skills (caveman, homelab-*, notion, ...)
    ↓
 Memory ← SQLite (data/memory.db), note:* namespace injected into system prompt
 ```
@@ -110,7 +110,7 @@ aureon-agent/
 └── .env                    # gitignored
 ```
 
-## Setup modes (mirrors OpenClaw + Hermes)
+## Setup modes
 
 | Mode | Behavior | Use for |
 |---|---|---|
@@ -134,7 +134,7 @@ Sections: `model | channel | daemon | skills | workspace | all`.
 
 **v0.1 (current)** — Phase 0-5 done. Phase 6-8 in progress. See [`tasks/todo.md`](tasks/todo.md) for the full roadmap.
 
-- ✅ Live Telegram round-trip verified end-to-end (modeled on Tiny-OpenClaw's 8-component architecture)
+- ✅ Live Telegram round-trip verified end-to-end
 - ✅ Doctrine symlinked to `~/.openclaw/workspace/` (8 skills auto-load)
 - ✅ SQLite sessions + memory
 - ✅ Plan-node soft warning on 3+ step tasks
@@ -166,6 +166,4 @@ MIT — see [LICENSE](LICENSE).
 ## Acknowledgments
 
 - [ashishbamania/Tiny-OpenClaw](https://github.com/ashishbamania/Tiny-OpenClaw) — 8-component reference architecture, vendored at `references/tiny-openclaw/`
-- [openclaw/openclaw](https://github.com/openclaw/openclaw) — the original OpenClaw agent (Peter Steinberger)
-- [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) — Olympus orchestration doctrine, agent router patterns, setup-wizard conventions
 - [ashishbamania/Into-AI](https://substack.com/home/post/p-193348119) — the build walkthrough that became the reference port

@@ -1,5 +1,5 @@
 [Unit]
-Description=aureon-agent — Hermes-flavored autonomous AI agent (Telegram + Discord)
+Description=aureon-agent — personal AI agent (Telegram + Discord)
 After=network.target
 
 [Service]
