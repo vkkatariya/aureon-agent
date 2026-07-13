@@ -21,6 +21,70 @@ def cmd_status(args):
 def cmd_logs(args):
     subprocess.run(["journalctl", "--user", "-u", "aureon-agent.service", "-f"])
 
+def cmd_tool_log(args):
+    from aureon_agent.tools.log import get_recent_tool_logs
+    logs = get_recent_tool_logs(limit=args.last)
+    if not logs:
+        print("No tool logs found.")
+        return
+    
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title=f"Recent Tool Logs (Last {len(logs)})")
+    table.add_column("ID")
+    table.add_column("Timestamp")
+    table.add_column("Tool")
+    table.add_column("Inputs", overflow="fold")
+    table.add_column("Result", overflow="fold")
+    table.add_column("Exit/Status")
+    table.add_column("Confirmed")
+    
+    for row in logs:
+        inputs_str = row['inputs']
+        if len(inputs_str) > 50:
+            inputs_str = inputs_str[:47] + "..."
+        result_str = row['result']
+        if len(result_str) > 50:
+            result_str = result_str[:47] + "..."
+            
+        table.add_row(
+            str(row['id']),
+            row['timestamp'],
+            row['tool_name'],
+            inputs_str,
+            result_str,
+            row['exit_status'],
+            row['confirmation_status']
+        )
+    console.print(table)
+
+def cmd_clarify_log(args):
+    from aureon_agent.tools.log import get_recent_tool_logs
+    # Fetch more logs and filter for clarify
+    logs = [log for log in get_recent_tool_logs(limit=args.last * 10) if log['tool_name'] == 'clarify'][:args.last]
+    if not logs:
+        print("No clarify logs found.")
+        return
+    
+    from rich.console import Console
+    from rich.table import Table
+    console = Console()
+    table = Table(title=f"Recent Clarifications (Last {len(logs)})")
+    table.add_column("ID")
+    table.add_column("Timestamp")
+    table.add_column("Inputs", overflow="fold")
+    table.add_column("Result", overflow="fold")
+    
+    for row in logs:
+        table.add_row(
+            str(row['id']),
+            row['timestamp'],
+            row['inputs'],
+            row['result']
+        )
+    console.print(table)
+
 def cmd_version(args):
     print(f"aureon-agent v{__version__}")
 
@@ -50,6 +114,14 @@ def main():
     
     # logs
     p_logs = subparsers.add_parser("logs", help="Tail systemd logs")
+    
+    # tool-log
+    p_tool_log = subparsers.add_parser("tool-log", help="Show tool usage audit log")
+    p_tool_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
+    
+    # clarify-log
+    p_clarify_log = subparsers.add_parser("clarify-log", help="Show clarification log")
+    p_clarify_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
     
     # version
     p_version = subparsers.add_parser("version", help="Print version")
@@ -81,6 +153,10 @@ def main():
         cmd_status(args)
     elif args.command == "logs":
         cmd_logs(args)
+    elif args.command == "tool-log":
+        cmd_tool_log(args)
+    elif args.command == "clarify-log":
+        cmd_clarify_log(args)
     elif args.command == "version":
         cmd_version(args)
 

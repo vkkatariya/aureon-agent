@@ -56,6 +56,14 @@ def check_workspace() -> Tuple[str, str]:
         return "❌", f"Broken symlinks: {', '.join(broken)}"
     return "✅", "All symlinks resolve"
 
+def check_tools_allowlist() -> Tuple[str, str]:
+    from aureon_agent.tools.base import WorkspaceBoundTool
+    if not os.path.exists(WorkspaceBoundTool.ALLOWED_RW):
+        return "❌", f"RW workspace {WorkspaceBoundTool.ALLOWED_RW} missing"
+    if not os.path.exists(WorkspaceBoundTool.ALLOWED_RO):
+        return "❌", f"RO workspace {WorkspaceBoundTool.ALLOWED_RO} missing"
+    return "✅", "Paths configured correctly"
+
 def check_ollama() -> Tuple[str, str]:
     config = AureonConfig.from_file(ENV_PATH)
     try:
@@ -112,6 +120,7 @@ def main():
         ("Virtual Env", check_venv),
         ("Config (.env)", check_env),
         ("Workspace", check_workspace),
+        ("Tools Allowlist", check_tools_allowlist),
         ("Ollama", check_ollama),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),

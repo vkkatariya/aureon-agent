@@ -3,6 +3,20 @@
 
 ---
 
+## 2026-07-13 — Phase 6.5: Tier 2 tools (local session)
+**Did:** Built Tier 2 tools (`todo` and `clarify`), adding the ability for the agent to maintain its own plan and ask questions before destructive actions. Branched `feat/aureon-agent-tier2-tools` off `dev`.
+**Built:** `aureon_agent/tools/todo.py` (`todo_read`, `todo_write`, `todo_add`), `aureon_agent/tools/clarify.py` (`clarify`). Updated `channels/router.py` with `pending_clarifications` and `send_message` capabilities to properly pause the ReAct loop and await a user reply. Registered the tools in `agent_runtime.py`.
+**Verified:** Tests passing for Todo validations and operations. CLI `clarify-log` command works and formats tool audit entries properly. 
+**Next:** Subagent dispatch (delegate_task).
+**Modified:** `aureon_agent/tools/todo.py`, `aureon_agent/tools/clarify.py`, `aureon_agent/__main__.py`, `agent_runtime.py`, `channels/router.py`, `docs/tools.md`, `tasks/DEVLOG.md`.
+
+## 2026-07-13 — Phase 6.5: Tier 1 tools (local session)
+**Did:** Built Tier 1 tools (`terminal`, `file`, `web`) mirroring Hermes shapes. Added `WorkspaceBoundTool` base class and `tool_log.db` audit logging. Branched `feat/aureon-agent-tier1-tools` off `dev`.
+**Built:** `aureon_agent/tools/` package (`base.py`, `log.py`, `confirm.py`, `terminal.py`, `file.py`, `web.py`, `__init__.py`). Added `aureon-agent tool-log` CLI and `check_tools_allowlist` to doctor. Updated `agent_runtime.py` and `channels/router.py` to register tools and wire Captain confirmation callbacks. Added `docs/tools.md` and tests in `tests/test_tools.py`. Installed `beautifulsoup4`.
+**Verified:** Pytest suite passes. Tools correctly restrict to allowlist paths and block unconfirmed destructive actions.
+**Next:** Tier 2 tools (todo, clarify).
+**Modified:** `requirements.txt`, `aureon_agent/__main__.py`, `aureon_agent/doctor.py`, `agent_runtime.py`, `channels/router.py`, `tasks/DEVLOG.md`.
+
 ## 2026-07-13 — Session compaction (local session, branch `feat/aureon-agent-session-compaction`)
 **Did:** Built model-aware session compaction per `tasks/kickoff-session-compaction.md` (confirmed doc, pure-docs commit `225143a` on `dev`, no prior code). Old turns get LLM-summarized once history exceeds a per-model token threshold; recent turns stay verbatim. View-layer only — `session_manager.py`'s `messages` table is never rewritten, compaction only reshapes what gets sent to the LLM per-call.
 **Built:**

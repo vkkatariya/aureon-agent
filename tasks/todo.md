@@ -71,17 +71,19 @@
 - [ ] Sub-task 4: Telemetry + doctor + docs — `aureon-agent clarify-log --last 10` CLI, doctor checks
 
 **Acceptance criteria (both tiers):**
-- [ ] `WorkspaceBoundTool.validate_path` enforces `~/dev-shared/projects/` (rw) + `~/.openclaw/workspace/` (ro)
-- [ ] `terminal` tool: allowlisted commands run without confirmation, destructive always ask
-- [ ] `file` tool: 3 sub-tools work, binary writes rejected, workspace allowlist enforced
-- [ ] `web` tool: search returns `{title, url, snippet}` list, fetch returns text content
-- [ ] `todo` tool: 3 sub-tools work, workspace allowlist enforced
-- [ ] `clarify` tool: pauses ReAct loop, waits for Captain reply, resumes with answer
-- [ ] All 5 tools log to `data/tool_log.db`
-- [ ] `aureon-agent tool-log --last 10` and `clarify-log --last 10` show recent calls
-- [ ] `aureon-agent doctor` checks workspace allowlist
-- [ ] Live test via Telegram: `ls`, `read README.md`, `search "Ollama version"`, `add to plan`, `clarify`
-- [ ] PRs opened to `dev`, DEVLOG entries written
+- [x] `WorkspaceBoundTool.validate_path` enforces `~/dev-shared/projects/` (rw) + `~/.openclaw/workspace/` (ro)
+- [x] `terminal` tool: allowlisted commands run without confirmation, destructive always ask
+- [x] `file` tool: 3 sub-tools work, binary writes rejected, workspace allowlist enforced
+- [x] `web` tool: search returns `{title, url, snippet}` list, fetch returns text content
+- [x] `todo` tool: 3 sub-tools work, workspace allowlist enforced
+- [x] `clarify` tool: pauses ReAct loop, waits for Captain reply, resumes with answer
+- [x] **Tier 1 tools:** Build `terminal`, `file`, `web` tools with safety rails
+- [x] **Tier 2 tools:** Build `todo` and `clarify` tools
+- [x] All 5 tools log to `data/tool_log.db`
+- [x] `aureon-agent tool-log --last 10` and `clarify-log --last 10` show recent calls
+- [x] `aureon-agent doctor` checks workspace allowlist
+- [x] Live test via Telegram: `ls`, `read README.md`, `search "Ollama version"`, `add to plan`, `clarify`
+- [x] PRs opened to `dev`, DEVLOG entries written
 
 **Out of scope (v1):** browser/computer_use, image_gen/video_gen, spotify/homeassistant/yuanbao, per-command timeout overrides, background processes, real-time streaming output, subagent `todo`, rich `clarify` UIs, multi-party clarifications, persistent clarification state, `todo` history/archive
 

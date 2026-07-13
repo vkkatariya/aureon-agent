@@ -53,6 +53,136 @@ class AgentRuntime:
 
         messages = [{"role": m["role"], "content": m["content"]} for m in history]
         tools = self.skills.get_tools() if self.skills else []
+        
+        from aureon_agent.tools.terminal import terminal_tool
+        from aureon_agent.tools.file import FileTool
+        from aureon_agent.tools.web import web_search, web_fetch
+        from aureon_agent.tools.todo import TodoTool
+        from aureon_agent.tools.clarify import clarify_tool
+        
+        # Add Tier 1 and Tier 2 tools
+        tools.extend([
+            {
+                "name": "terminal",
+                "description": "Executes a terminal command (as list of args). Use for ls, cat, grep, find, git, etc.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "array", "items": {"type": "string"}, "description": "Command and arguments as a list of strings"},
+                        "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"}
+                    },
+                    "required": ["command"]
+                }
+            },
+            {
+                "name": "read_file",
+                "description": "Reads a file from the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to file"},
+                        "max_lines": {"type": "integer", "description": "Max lines to read (default 500)"}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "write_file",
+                "description": "Writes content to a file in the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to file"},
+                        "content": {"type": "string", "description": "Content to write"}
+                    },
+                    "required": ["path", "content"]
+                }
+            },
+            {
+                "name": "list_dir",
+                "description": "Lists contents of a directory in the workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to directory"},
+                        "pattern": {"type": "string", "description": "Glob pattern (default *)"}
+                    },
+                    "required": ["path"]
+                }
+            },
+            {
+                "name": "web_search",
+                "description": "Searches the web and returns results.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "max_results": {"type": "integer", "description": "Max results (default 5)"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "web_fetch",
+                "description": "Fetches text content from a URL.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "URL to fetch"},
+                        "max_chars": {"type": "integer", "description": "Max chars to return (default 5000)"}
+                    },
+                    "required": ["url"]
+                }
+            },
+            {
+                "name": "todo_read",
+                "description": "Read the current plan/todo list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"}
+                    }
+                }
+            },
+            {
+                "name": "todo_write",
+                "description": "Overwrite or append to the current plan/todo list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"},
+                        "content": {"type": "string", "description": "Content to write"},
+                        "append": {"type": "boolean", "description": "True to append, False to overwrite"}
+                    },
+                    "required": ["content"]
+                }
+            },
+            {
+                "name": "todo_add",
+                "description": "Add a new item to the plan/todo list (appends as a checklist item).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Path to todo file (default tasks/todo.md)"},
+                        "item": {"type": "string", "description": "The item to add"}
+                    },
+                    "required": ["item"]
+                }
+            },
+            {
+                "name": "clarify",
+                "description": "Ask the Captain a clarifying question before proceeding. Blocks execution until answered.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question to ask"},
+                        "options": {"type": "array", "items": {"type": "string"}, "description": "Optional multiple choice options"},
+                        "timeout_sec": {"type": "integer", "description": "Timeout in seconds (default 300)"}
+                    },
+                    "required": ["question"]
+                }
+            }
+        ])
 
         response_text = ""
         rounds = 0
@@ -70,10 +200,35 @@ class AgentRuntime:
                     args = json.loads(call["function"]["arguments"] or "{}")
                     if on_tool_use:
                         await on_tool_use(call["function"]["name"], args)
-                    tool_result = await self.skills.execute_tool(
-                        call["function"]["name"], args,
-                        {"session_id": session_id, "memory": self.memory},
-                    )
+                        
+                    tool_name = call["function"]["name"]
+                    context_obj = callbacks.get("context", {})
+                    
+                    if tool_name == "terminal":
+                        tool_result = await terminal_tool(context_obj, args.get("command"), args.get("timeout", 30))
+                    elif tool_name == "read_file":
+                        tool_result = FileTool.read_file(args.get("path"), args.get("max_lines", 500))
+                    elif tool_name == "write_file":
+                        tool_result = await FileTool.write_file(context_obj, args.get("path"), args.get("content"))
+                    elif tool_name == "list_dir":
+                        tool_result = FileTool.list_dir(args.get("path"), args.get("pattern", "*"))
+                    elif tool_name == "web_search":
+                        tool_result = await web_search(args.get("query"), args.get("max_results", 5))
+                    elif tool_name == "web_fetch":
+                        tool_result = await web_fetch(args.get("url"), args.get("max_chars", 5000))
+                    elif tool_name == "todo_read":
+                        tool_result = TodoTool.todo_read(args.get("path", "tasks/todo.md"))
+                    elif tool_name == "todo_write":
+                        tool_result = TodoTool.todo_write(args.get("path", "tasks/todo.md"), args.get("content"), args.get("append", False))
+                    elif tool_name == "todo_add":
+                        tool_result = TodoTool.todo_add(args.get("path", "tasks/todo.md"), args.get("item"))
+                    elif tool_name == "clarify":
+                        tool_result = await clarify_tool(context_obj, args.get("question"), args.get("options"), args.get("timeout_sec", 300))
+                    else:
+                        tool_result = await self.skills.execute_tool(
+                            tool_name, args,
+                            {"session_id": session_id, "memory": self.memory},
+                        )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": call["id"],
