@@ -4,10 +4,12 @@ import asyncio
 import logging
 import os
 import signal
+import sys
 
 from dotenv import load_dotenv
 
 from agent_runtime import AgentRuntime
+from aureon_agent.pidlock import acquire_lock, install_signal_handlers, release_lock
 from channels.discord import DiscordChannel
 from channels.router import ChannelRouter
 from channels.telegram import TelegramChannel
@@ -51,6 +53,16 @@ async def _start_health_server():
 
 
 async def main():
+    # PID lock — prevent two instances on the same workspace.
+    existing = acquire_lock()
+    if existing:
+        logger.error(
+            "another aureon-agent is already running (pid %s). "
+            "If that's stale, remove ~/.cache/aureon-agent.pid and retry.",
+            existing,
+        )
+        sys.exit(1)
+
     logger.info("aureon-agent starting up")
     os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -102,7 +114,13 @@ async def main():
     channels_task = asyncio.create_task(router.start_all()) if router.channels else None
     logger.info("aureon-agent running (channels: %s)", ", ".join(router.channels) or "none")
 
-    await shutdown.wait()
+    try:
+        await shutdown.wait()
+    finally:
+        # Always release the PID lock on the way out, regardless of
+        # whether shutdown came from SIGINT, SIGTERM, or an exception.
+        release_lock()
+
     logger.info("shutting down")
 
     reload_task.cancel()
