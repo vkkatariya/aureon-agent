@@ -58,7 +58,7 @@ A from-scratch, Hermes-flavored AI agent modeled on Tiny-OpenClaw's 8-component 
 - **`~/.openclaw/workspace/channel-policy-spec.md`** — per-channel exec policy
 - **`~/.openclaw/workspace/skills/`** — 8 existing skills (caveman, homelab-*, project-init, etc.)
 - **OpenClaw memory/`** — daily notes pattern
-- **Tiny-OpenClaw repo:** `https://github.com/ashishbamania/Tiny-OpenClaw` — 8-file reference architecture
+- **Tiny-OpenClaw (vendored reference):** `references/tiny-openclaw/` — 8-file reference architecture, pinned commit `a4cb8cb94c9fda522e5220b7971979622ea94bc3`. Offline-first, no network needed. See `references/tiny-openclaw/README.md` for the keep-vs-change matrix vs aureon-agent.
 
 ## Read these on session start (in order)
 
