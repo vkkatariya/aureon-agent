@@ -372,7 +372,7 @@ class AgentRuntime:
         job_id = uuid.uuid4().hex[:8]
         chat_id = os.environ.get("TELEGRAM_ALLOWED_CHATS", "").split(",")[0]
         
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cron_jobs.db")
         async with aiosqlite.connect(db_path) as db:
             await db.execute("""
                 INSERT INTO cron_jobs (id, name, schedule, schedule_type, prompt, skills, deliver, chat_id, repeat, enabled, created_at, next_run_at)
@@ -391,7 +391,7 @@ class AgentRuntime:
         import aiosqlite
         from datetime import datetime
         
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cron_jobs.db")
         if not os.path.exists(db_path):
             return "No cron jobs configured."
         
@@ -418,7 +418,7 @@ class AgentRuntime:
         if not job_id:
             return "Error: job_id required"
         
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cron_jobs.db")
         async with aiosqlite.connect(db_path) as db:
             cursor = await db.execute("DELETE FROM cron_jobs WHERE id=?", (job_id,))
             await db.commit()
@@ -434,7 +434,7 @@ class AgentRuntime:
         if not job_id:
             return "Error: job_id required"
         
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cron_jobs.db")
         async with aiosqlite.connect(db_path) as db:
             cursor = await db.execute("UPDATE cron_jobs SET enabled=0 WHERE id=?", (job_id,))
             await db.commit()
@@ -452,7 +452,7 @@ class AgentRuntime:
         if not job_id:
             return "Error: job_id required"
         
-        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cron_jobs.db")
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT * FROM cron_jobs WHERE id=?", (job_id,))
