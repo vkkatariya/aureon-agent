@@ -196,6 +196,60 @@ class AgentRuntime:
                     },
                     "required": ["description"]
                 }
+            },
+            {
+                "name": "cron_create",
+                "description": "Create a scheduled cron job. The bot will run the prompt at the scheduled time and deliver the output to Telegram. Schedule can be: cron expression ('0 8 * * *' = daily 8am, '0 */6 * * *' = every 6h), interval ('30m', '2h', '1d'), or one-shot ISO timestamp ('2026-07-15T09:00:00'). Use --repeat 1 for one-shot reminders (auto-deletes after 1 run).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "schedule": {"type": "string", "description": "Cron expr '0 8 * * *', interval '30m'/'2h'/'1d', or ISO '2026-07-15T09:00:00'"},
+                        "name": {"type": "string", "description": "Human-readable job name"},
+                        "prompt": {"type": "string", "description": "Self-contained task instruction (agent has no context, must be fully self-contained)"},
+                        "skills": {"type": "array", "items": {"type": "string"}, "description": "Skills to load (e.g. ['homelab-health']). Empty = bare agent."},
+                        "deliver": {"type": "string", "description": "Delivery channel: telegram (default), discord, local, all"},
+                        "repeat": {"type": "integer", "description": "0 = infinite (default), 1 = one-shot (auto-delete after 1 run), N = N runs then delete"}
+                    },
+                    "required": ["schedule", "name", "prompt"]
+                }
+            },
+            {
+                "name": "cron_list",
+                "description": "List all scheduled cron jobs with their schedule, next run, and status.",
+                "parameters": {"type": "object", "properties": {}}
+            },
+            {
+                "name": "cron_remove",
+                "description": "Remove (delete) a scheduled cron job by its ID. Use cron_list first to find the ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "string", "description": "The 8-character job ID"}
+                    },
+                    "required": ["job_id"]
+                }
+            },
+            {
+                "name": "cron_pause",
+                "description": "Pause a scheduled cron job (keeps it, but it won't run until resumed).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "string", "description": "The 8-character job ID"}
+                    },
+                    "required": ["job_id"]
+                }
+            },
+            {
+                "name": "cron_resume",
+                "description": "Resume a paused cron job.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "job_id": {"type": "string", "description": "The 8-character job ID"}
+                    },
+                    "required": ["job_id"]
+                }
             }
         ])
 
@@ -244,6 +298,16 @@ class AgentRuntime:
                         tool_result = await clarify_tool(context_obj, args.get("question"), args.get("options"), args.get("timeout_sec", 300))
                     elif tool_name == "delegate_task":
                         tool_result = await delegate_task_tool(context_obj, args.get("description"), args.get("backend", "claude-code"), args.get("timeout_sec", 300), args.get("files_to_inspect"))
+                    elif tool_name == "cron_create":
+                        tool_result = await self._cron_create(args)
+                    elif tool_name == "cron_list":
+                        tool_result = await self._cron_list()
+                    elif tool_name == "cron_remove":
+                        tool_result = await self._cron_remove(args.get("job_id", ""))
+                    elif tool_name == "cron_pause":
+                        tool_result = await self._cron_pause(args.get("job_id", ""))
+                    elif tool_name == "cron_resume":
+                        tool_result = await self._cron_resume(args.get("job_id", ""))
                     else:
                         tool_result = await self.skills.execute_tool(
                             tool_name, args,
@@ -279,6 +343,130 @@ class AgentRuntime:
 
         logger.info("agent.run: returning response_text=%r (length=%d)", response_text[:100] if response_text else "", len(response_text))
         return response_text
+
+    async def _cron_create(self, args: dict) -> str:
+        """Create a cron job from LLM tool call."""
+        import os
+        import time
+        import uuid
+        import json
+        import aiosqlite
+        from aureon_agent.cron_schedule import detect_schedule_type, calc_next_run
+        
+        schedule = args.get("schedule", "")
+        name = args.get("name", "")
+        prompt = args.get("prompt", "")
+        skills = args.get("skills", [])
+        deliver = args.get("deliver", "telegram")
+        repeat = args.get("repeat", 0)
+        
+        if not schedule or not name or not prompt:
+            return "Error: schedule, name, and prompt are required"
+        
+        try:
+            schedule_type = detect_schedule_type(schedule)
+            next_run = calc_next_run(schedule, schedule_type, time.time())
+        except Exception as e:
+            return f"Error: invalid schedule: {e}"
+        
+        job_id = uuid.uuid4().hex[:8]
+        chat_id = os.environ.get("TELEGRAM_ALLOWED_CHATS", "").split(",")[0]
+        
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        async with aiosqlite.connect(db_path) as db:
+            await db.execute("""
+                INSERT INTO cron_jobs (id, name, schedule, schedule_type, prompt, skills, deliver, chat_id, repeat, enabled, created_at, next_run_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            """, (job_id, name, schedule, schedule_type, prompt, json.dumps(skills), deliver, chat_id, repeat, time.time(), next_run))
+            await db.commit()
+        
+        from datetime import datetime
+        next_str = datetime.fromtimestamp(next_run).strftime("%Y-%m-%d %H:%M")
+        return f"Created cron job {job_id}: '{name}'\nSchedule: {schedule} ({schedule_type})\nNext run: {next_str}\nDeliver: {deliver}\nRepeat: {'one-shot' if repeat == 1 else 'infinite' if repeat == 0 else f'{repeat} times'}"
+
+    async def _cron_list(self) -> str:
+        """List all cron jobs."""
+        import os
+        import time
+        import aiosqlite
+        from datetime import datetime
+        
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        if not os.path.exists(db_path):
+            return "No cron jobs configured."
+        
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM cron_jobs ORDER BY next_run_at")
+            jobs = await cursor.fetchall()
+        
+        if not jobs:
+            return "No cron jobs configured."
+        
+        lines = []
+        for j in jobs:
+            status = "active" if j["enabled"] else "paused"
+            next_str = datetime.fromtimestamp(j["next_run_at"]).strftime("%m-%d %H:%M") if j["next_run_at"] else "N/A"
+            lines.append(f"  {j['id']} [{status}] {j['name']}\n    schedule: {j['schedule']}  deliver: {j['deliver']}\n    next: {next_str}  runs: {j['run_count']}")
+        return "\n".join(lines)
+
+    async def _cron_remove(self, job_id: str) -> str:
+        """Remove a cron job."""
+        import os
+        import aiosqlite
+        
+        if not job_id:
+            return "Error: job_id required"
+        
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        async with aiosqlite.connect(db_path) as db:
+            cursor = await db.execute("DELETE FROM cron_jobs WHERE id=?", (job_id,))
+            await db.commit()
+            if cursor.rowcount == 0:
+                return f"Error: job {job_id} not found"
+        return f"Removed cron job {job_id}"
+
+    async def _cron_pause(self, job_id: str) -> str:
+        """Pause a cron job."""
+        import os
+        import aiosqlite
+        
+        if not job_id:
+            return "Error: job_id required"
+        
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        async with aiosqlite.connect(db_path) as db:
+            cursor = await db.execute("UPDATE cron_jobs SET enabled=0 WHERE id=?", (job_id,))
+            await db.commit()
+            if cursor.rowcount == 0:
+                return f"Error: job {job_id} not found"
+        return f"Paused cron job {job_id}"
+
+    async def _cron_resume(self, job_id: str) -> str:
+        """Resume a paused cron job."""
+        import os
+        import time
+        import aiosqlite
+        from aureon_agent.cron_schedule import detect_schedule_type, calc_next_run
+        
+        if not job_id:
+            return "Error: job_id required"
+        
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cron_jobs.db")
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT * FROM cron_jobs WHERE id=?", (job_id,))
+            job = await cursor.fetchone()
+            if not job:
+                return f"Error: job {job_id} not found"
+            
+            next_run = calc_next_run(job["schedule"], job["schedule_type"], time.time())
+            await db.execute("UPDATE cron_jobs SET enabled=1, next_run_at=? WHERE id=?", (next_run, job_id))
+            await db.commit()
+        
+        from datetime import datetime
+        next_str = datetime.fromtimestamp(next_run).strftime("%m-%d %H:%M")
+        return f"Resumed cron job {job_id}, next run: {next_str}"
 
     async def _call_llm(self, system_prompt, messages, tools, on_token):
         body = {
