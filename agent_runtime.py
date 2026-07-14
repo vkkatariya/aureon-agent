@@ -200,10 +200,14 @@ class AgentRuntime:
         ])
 
         response_text = ""
+
         rounds = 0
         while rounds < MAX_TOOL_ROUNDS:
             rounds += 1
             result = await self._call_llm(system_prompt, messages, tools, on_token)
+
+            if not result.get("text") and not result.get("tool_calls"):
+                logger.warning("agent.run: LLM returned EMPTY response on round %d — last_user=%r", rounds, messages[-1].get("content", "")[:100] if messages else "")
 
             if result["tool_calls"]:
                 messages.append({
@@ -253,9 +257,11 @@ class AgentRuntime:
                     })
                 continue
 
-            response_text = result["text"]
+            response_text = result["text"] or ""
+            logger.info("agent.run: round %d ended with text=%r tool_calls=%d", rounds, response_text[:100] if response_text else "", len(result.get("tool_calls") or []))
             break
 
+        logger.info("agent.run: returning response_text=%r (length=%d)", response_text[:100] if response_text else "", len(response_text))
         return response_text
 
     async def _call_llm(self, system_prompt, messages, tools, on_token):

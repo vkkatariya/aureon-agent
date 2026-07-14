@@ -40,8 +40,10 @@ class TelegramChannel(Channel):
         return await self._app.bot.send_message(chat_id=chat_id, text=text)
 
     async def edit_message(self, chat_id, message_id, text):
+        text_to_send = text or "…"
+        logger.info("edit_message: chat_id=%s message_id=%s text=%r (len=%d)", chat_id, message_id, text_to_send[:200] if text_to_send else "<empty>", len(text_to_send))
         try:
-            await self._app.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text or "…")
+            await self._app.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text_to_send)
         except Exception as e:
             logger.debug("edit_message skipped for %s/%s: %s", chat_id, message_id, e)
 
@@ -82,9 +84,18 @@ class TelegramChannel(Channel):
             return
 
         if not response:
-            await self.edit_message(chat_id, placeholder.message_id, "(no response)")
+            logger.warning("telegram._on_message: response is empty/None, falling back to streamed state text. chat_id=%s, last_user=%r", chat_id, text[:100])
+            # Fallback: edit the placeholder with whatever text was streamed during the LLM response
+            # (state["text"] may be empty if the LLM returned nothing, but at least try)
+            if state.get("text", "").strip():
+                await self.edit_message(chat_id, placeholder.message_id, state["text"])
+                logger.info("telegram._on_message: used streamed state text fallback, length=%d", len(state["text"]))
+            else:
+                await self.edit_message(chat_id, placeholder.message_id, "(no response from LLM — try again or simplify your message)")
+                logger.error("telegram._on_message: BOTH final response and streamed state are empty. LLM returned nothing. chat_id=%s", chat_id)
             return
 
+        logger.info("telegram._on_message: response received, length=%d, chat_id=%s", len(response), chat_id)
         chunks = [response[i:i + TELEGRAM_MAX_LEN] for i in range(0, len(response), TELEGRAM_MAX_LEN)]
         await self.edit_message(chat_id, placeholder.message_id, chunks[0])
         for chunk in chunks[1:]:
