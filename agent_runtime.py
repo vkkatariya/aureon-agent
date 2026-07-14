@@ -65,11 +65,11 @@ class AgentRuntime:
         tools.extend([
             {
                 "name": "terminal",
-                "description": "Executes a terminal command (as list of args). Use for ls, cat, grep, find, git, etc.",
+                "description": "Executes a terminal command. Command can be a list of args (preferred) or a single string. Use for ls, cat, grep, find, git, etc.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "command": {"type": "array", "items": {"type": "string"}, "description": "Command and arguments as a list of strings"},
+                        "command": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}], "description": "Command as list of args ['ls', '-la', '~/foo'] or as a single string 'ls -la ~/foo'"},
                         "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"}
                     },
                     "required": ["command"]

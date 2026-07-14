@@ -44,14 +44,28 @@ def is_auto_run(cmd_parts: list) -> bool:
         return True
     return False
 
-async def terminal_tool(context: dict, command: list, timeout: int = 30) -> str:
+async def terminal_tool(context: dict, command, timeout: int = 30) -> str:
     """
     Executes a terminal command.
-    Command must be a list of strings (no shell injection).
+    Accepts command as a list of strings OR a single string (which will be parsed with shlex).
     """
+    if command is None or command == "":
+        return "Error: Empty command."
+
+    # Accept both list and string. LLMs commonly send string commands.
     if isinstance(command, str):
-        return "Error: Command must be provided as a list of arguments, not a single string."
-        
+        try:
+            command = shlex.split(command)
+        except ValueError as e:
+            return f"Error: Could not parse command string: {e}"
+
+    if isinstance(command, dict):
+        # Some LLM tool-call shapes wrap command in a dict accidentally
+        return f"Error: command must be a list or string, got dict ({list(command.keys())})"
+
+    if not isinstance(command, list):
+        return f"Error: command must be a list of strings, got {type(command).__name__}"
+
     if not command:
         return "Error: Empty command."
         
