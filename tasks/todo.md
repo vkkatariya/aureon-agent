@@ -53,6 +53,25 @@
 - [ ] Webhook mode for Telegram (replace polling)
 - [ ] Server/group channel support
 
+## Phase 9: Cron Scheduler ✅
+
+**Goal:** Add a background cron scheduler to the bot process that runs isolated agent turns on a schedule and delivers output to Telegram/Discord.
+
+- [x] Sub-task 1: SQLite schema + db init (`aureon_agent/cron_db.py`) — `cron_jobs` + `cron_runs` tables, WAL mode, full CRUD
+- [x] Sub-task 2: Schedule parsing (`aureon_agent/cron_schedule.py`) — cron/interval/at detection, croniter integration, top-of-hour staggering
+- [x] Sub-task 3: CronScheduler core (`aureon_agent/cron.py`) — asyncio loop, job runner, delivery, rescheduling, overdue handling
+- [x] Sub-task 4: SkillLoader subset (`skill_loader.py`) — `get_tools_subset(names)` for per-job skill loading
+- [x] Sub-task 5: CLI subcommands (`aureon_agent/cron_cli.py`) — list, create, pause, resume, run, remove, runs, status
+- [x] Sub-task 6: Integration + tests + docs
+  - [x] Wired into `aureon_agent/cli.py` (starts after channels, stops before teardown)
+  - [x] Wired into `aureon_agent/__main__.py` (cron subcommand group)
+  - [x] Doctor health check (`check_cron_scheduler` in `aureon_agent/doctor.py`)
+  - [x] `croniter>=1.4` added to `requirements.txt`
+  - [x] Tests: 24 tests in `tests/test_cron.py` (all passing)
+  - [x] Docs: `docs/cron.md` (schedule types, CLI, delivery, heartbeat comparison, troubleshooting)
+  - [x] 37/37 total tests pass (13 existing + 24 new)
+
+
 ## Phase 6.5: Tier 1 + Tier 2 tools (Hermes parity)
 
 **Goal:** Add the 5 high-leverage tools the agent is missing compared to Hermes's 23 built-in toolsets. Pairs with the plan-node hard block — the agent can now maintain its own plan and ask clarifying questions before doing destructive work.

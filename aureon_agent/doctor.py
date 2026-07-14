@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import shutil
 import sys
 import subprocess
@@ -125,6 +126,30 @@ def check_smoke_tests() -> Tuple[str, str]:
     except Exception as e:
         return "❌", f"Error: {e}"
 
+def check_cron_scheduler() -> Tuple[str, str]:
+    db_path = os.path.join(BASE_DIR, "data", "cron_jobs.db")
+    if not os.path.exists(db_path):
+        return "🟡", "No cron DB yet (starts on first bot run)"
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # Count enabled jobs
+        cursor = conn.execute("SELECT COUNT(*) FROM cron_jobs WHERE enabled = 1")
+        enabled = cursor.fetchone()[0]
+        # Check for stuck runs (running > 10 min)
+        import time
+        cutoff = time.time() - 600
+        cursor = conn.execute(
+            "SELECT COUNT(*) FROM cron_runs WHERE status = 'running' AND started_at < ?",
+            (cutoff,))
+        stuck = cursor.fetchone()[0]
+        conn.close()
+        if stuck > 0:
+            return "🟡", f"{enabled} active jobs, {stuck} stuck run(s) (>10min)"
+        return "✅", f"{enabled} active job(s)"
+    except Exception as e:
+        return "❌", f"DB error: {e}"
+
 def main():
     print_banner()
     
@@ -141,6 +166,7 @@ def main():
         ("Ollama", check_ollama),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),
+        ("Cron Scheduler", check_cron_scheduler),
         ("Smoke Tests", check_smoke_tests)
     ]
     

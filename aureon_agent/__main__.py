@@ -4,6 +4,7 @@ import subprocess
 
 from aureon_agent import __version__
 from aureon_agent.cli import main as run_start
+from aureon_agent.cron_cli import cmd_cron, register_cron_subparser
 from aureon_agent.setup import main as run_setup
 from aureon_agent.doctor import main as run_doctor
 from aureon_agent.postinstall import main as run_postinstall
@@ -163,6 +164,9 @@ def main():
     p_subagent_log = subparsers.add_parser("subagent-log", help="Show subagent dispatch log")
     p_subagent_log.add_argument("--last", type=int, default=10, help="Number of logs to show")
     
+    # cron (subcommand group)
+    register_cron_subparser(subparsers)
+    
     # version
     p_version = subparsers.add_parser("version", help="Print version")
     
@@ -199,6 +203,8 @@ def main():
         cmd_clarify_log(args)
     elif args.command == "subagent-log":
         cmd_subagent_log(args)
+    elif args.command == "cron":
+        cmd_cron(args)
     elif args.command == "version":
         cmd_version(args)
 

@@ -3,6 +3,25 @@
 
 ---
 
+## 2026-07-14 — Phase 9: Cron Scheduler (local session, branch `feat/aureon-agent-cron-scheduler`)
+**Did:** Built the full cron scheduler subsystem per `tasks/kickoff-cron-scheduler.md`. Same architecture as Hermes + OpenClaw: scheduler ticks every 60s inside the bot process, checks for due jobs, spawns isolated agent runs via `agent_runtime.run()`, delivers output to Telegram/Discord via `channels/router.py`. Jobs persist in SQLite across restarts.
+**Built:**
+- `aureon_agent/cron_db.py` (new, ~170 lines): SQLite persistence with `cron_jobs` + `cron_runs` tables, WAL mode, full CRUD (`add_job`, `get_job`, `list_jobs`, `update_job`, `remove_job`, `get_due_jobs`, `add_run`, `finish_run`, `list_runs`). Same aiosqlite pattern as `memory.py` and `session_manager.py`.
+- `aureon_agent/cron_schedule.py` (new, ~115 lines): Schedule parsing for 3 types — `cron` (5-field Vixie via `croniter`), `interval` (Nm/Nh/Nd), `at` (ISO 8601). Top-of-hour staggering (0-5 min random offset for `:00` cron expressions, disable with `--exact`). Timezone support via `zoneinfo`.
+- `aureon_agent/cron.py` (new, ~230 lines): `CronScheduler` class — asyncio background task with `start()`/`stop()` lifecycle. `_loop()` ticks every 60s. `_tick()` finds due jobs. `_run_job()` creates isolated `cron:<job_id>:<timestamp>` sessions, calls `agent_runtime.run()` with `asyncio.wait_for(timeout)`, handles success/timeout/error, delivers via `router.send_message()`, reschedules or auto-deletes. `_handle_overdue_jobs()` on startup: recurring overdue → reschedule to future, one-shot overdue → delete. Grace period shutdown for in-flight jobs.
+- `aureon_agent/cron_cli.py` (new, ~280 lines): Full CLI subcommand group (`aureon-agent cron list|create|pause|resume|run|remove|runs|status`). Rich tables for output. `--name`, `--prompt`, `--skills`, `--deliver`, `--chat-id`, `--model`, `--timeout-sec`, `--repeat`, `--tz`, `--exact`, `--disabled` options on create.
+- `skill_loader.py`: Added `get_tools_subset(names: list[str])` for per-job skill loading. Backward-compatible.
+- `aureon_agent/cli.py`: Wired `CronScheduler` into bot startup (after channel registration, before `shutdown.wait()`) and shutdown (before `router.stop_all()`).
+- `aureon_agent/__main__.py`: Registered `cron` subcommand group with argparse dispatch.
+- `aureon_agent/doctor.py`: Added `check_cron_scheduler()` — verifies DB readable, counts enabled jobs, checks for stuck runs (>10 min).
+- `requirements.txt`: Added `croniter>=1.4`.
+- `docs/cron.md` (new): User-facing docs — schedule types, CLI commands, delivery options, isolation model, heartbeat vs cron comparison, troubleshooting.
+- `tests/test_cron.py` (new, 24 tests): Schedule detection, interval parsing, next-run calculation, staggering, DB CRUD, scheduler tick, success/timeout/error paths, one-shot auto-delete, overdue rescheduling, skill subset loading.
+**Verified:** 37/37 pytest tests pass (13 existing + 24 new). No regressions.
+**Modified:** `aureon_agent/cron_db.py` (new), `aureon_agent/cron_schedule.py` (new), `aureon_agent/cron.py` (new), `aureon_agent/cron_cli.py` (new), `skill_loader.py`, `aureon_agent/cli.py`, `aureon_agent/__main__.py`, `aureon_agent/doctor.py`, `requirements.txt`, `docs/cron.md` (new), `tests/test_cron.py` (new), `tasks/todo.md`, `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-13 — Phase 6.5 closeout + plan-node cherry-pick (this session)
 **Did:** Final audit of Phase 6.5. Captain asked: "Audit all the work that is in dev branch, if all good merge to dev and we are done for today". Verified 4 work items shipped, found 1 missing merge, cherry-picked it, wrote closing DEVLOG/lessons/todo.
 **Audit findings:**
