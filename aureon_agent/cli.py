@@ -114,6 +114,18 @@ async def main():
     channels_task = asyncio.create_task(router.start_all()) if router.channels else None
     logger.info("aureon-agent running (channels: %s)", ", ".join(router.channels) or "none")
 
+    # ── Cron scheduler ────────────────────────────────────────────
+    from aureon_agent.cron import CronScheduler
+    cron = CronScheduler(
+        db_path=os.path.join(DATA_DIR, "cron_jobs.db"),
+        agent_runtime=agent,
+        channel_router=router,
+        workspace_dir=WORKSPACE_DIR,
+        default_chat_id=os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",")[0].strip(),
+    )
+    await cron.start()
+    logger.info("cron scheduler started")
+
     try:
         await shutdown.wait()
     finally:
@@ -123,6 +135,7 @@ async def main():
 
     logger.info("shutting down")
 
+    await cron.stop()
     reload_task.cancel()
     await router.stop_all()
     if channels_task:

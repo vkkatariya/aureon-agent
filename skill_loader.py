@@ -104,6 +104,20 @@ class SkillLoader:
             tools.extend(skill["tools"])
         return tools
 
+    def get_tools_subset(self, names: list[str]) -> list:
+        """Return tools for only the specified skill names.
+
+        Skills not found are silently skipped with a warning.
+        If names is empty, returns an empty list (bare agent).
+        """
+        tools = []
+        for name in names:
+            if name in self.skills:
+                tools.extend(self.skills[name]["tools"])
+            else:
+                logger.warning("skill %r not found, skipping", name)
+        return tools
+
     async def execute_tool(self, tool_name, tool_input, context):
         for skill in self.skills.values():
             if any(t["name"] == tool_name for t in skill["tools"]):
