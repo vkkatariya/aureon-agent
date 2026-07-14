@@ -70,6 +70,46 @@
   - [x] Tests: 24 tests in `tests/test_cron.py` (all passing)
   - [x] Docs: `docs/cron.md` (schedule types, CLI, delivery, heartbeat comparison, troubleshooting)
   - [x] 37/37 total tests pass (13 existing + 24 new)
+  - [x] Live test via Telegram: `homelab-health-daily` cron job created (`0 8 * * *`, skill `homelab-health`, deliver telegram), matches Hermes job `bcfd979f8bd0`
+
+## Phase 9.5: Cron tools + TUI banner + bug fixes (2026-07-14/15, this session)
+
+**Goal:** Add cron tools to the agent's tool registry (so Captain can create/list/remove cron jobs via Telegram chat), replace the TUI banner with a pixel-art version matching the README SVG, and fix 3 bugs that were causing "(no response)" on Telegram.
+
+**Cron tools (commit `062702f`):**
+- [x] `cron_create` tool — LLM can create cron jobs from Telegram chat (schedule + name + prompt + optional skills/deliver/repeat)
+- [x] `cron_list` tool — LLM can list all cron jobs
+- [x] `cron_remove` tool — LLM can delete a job by ID
+- [x] `cron_pause` tool — LLM can pause a job
+- [x] `cron_resume` tool — LLM can resume a paused job
+- [x] All 5 tools call the same `cron_db.py` + `cron_schedule.py` as the CLI (no duplication)
+
+**TUI banner (commit `fcc49d0`):**
+- [x] Replaced simple `🦾 Aureon Agent Setup` Panel with pixel-art `AUREON-AGENT` wordmark
+- [x] 5x7 pixel font (same as `scripts/generate_banner.py`)
+- [x] Warm orange gradient: `#FFD24A` → `#FF8A2B` → `#E85D04` (matching `assets/banner.svg`)
+- [x] Top + bottom accent bars in `#E85D04`
+- [x] Version tagline + GitHub URL at bottom
+- [x] Shows in: `aureon-agent-doctor`, `aureon-agent setup`, `aureon-agent postinstall`
+
+**Bug fixes (commits `1015753`, `c42d136`, `3894977`, `503f2ce`):**
+- [x] `telegram.py:84-95` — fall back to streamed text when LLM returns empty final response (L-084)
+- [x] `terminal.py` — accept string commands (not just lists), parse with `shlex.split()` (L-086: LLM naturally sends strings, not arrays)
+- [x] `agent_runtime.py` — JSON schema for terminal tool now uses `oneOf: [array, string]`
+- [x] `terminal.py` — expand `~` in path-like arguments (`subprocess.run` with `shell=False` doesn't expand `~`)
+- [x] `agent_runtime.py` — force final summary call after `MAX_TOOL_ROUNDS=5` with no text (LLM was looping tool calls, never producing text)
+- [x] `agent_runtime.py` — fix cron tools DB path: single `dirname(__file__)` not double (agent_runtime.py is at project root, not inside `aureon_agent/`)
+
+**Acceptance criteria:**
+- [x] Captain can say "create a daily health check cron at 8am" on Telegram → bot calls `cron_create`
+- [x] Captain can say "list my cron jobs" → bot calls `cron_list`, returns real jobs
+- [x] TUI banner matches README SVG style (pixel-art, orange gradient, accent bars)
+- [x] Bot responds to all messages (no more "(no response from LLM)")
+- [x] `terminal` tool works with both string and array commands
+- [x] `~` paths expand correctly in terminal commands
+- [x] Long tool-call chains (5+ rounds) end with a forced summary response
+- [x] 37/37 tests pass
+- [x] Bot live under systemd, Telegram round-trip verified
 
 
 ## Phase 6.5: Tier 1 + Tier 2 tools (Hermes parity)

@@ -3,6 +3,38 @@
 
 ---
 
+## 2026-07-15 — Phase 9.5: Cron tools + TUI banner + bug fixes (this session)
+**Did:** Added 5 cron tools to the agent's tool registry (so Captain can create/list/remove cron jobs via Telegram chat), replaced the TUI banner with a pixel-art version matching the README SVG, and fixed 4 bugs that were causing "(no response from LLM)" on Telegram.
+**Cron tools (commit `062702f`):**
+- 5 new tools in `agent_runtime.py`: `cron_create`, `cron_list`, `cron_remove`, `cron_pause`, `cron_resume`
+- All 5 call the same `cron_db.py` + `cron_schedule.py` as the CLI (no duplication)
+- `_cron_create()` writes to `data/cron_jobs.db`, calculates next run via `cron_schedule.calc_next_run()`, defaults `chat_id` to `TELEGRAM_ALLOWED_CHATS`
+- `_cron_list()` reads from DB, returns formatted string with job ID, status, schedule, next run
+- `_cron_remove/pause/resume()` — thin wrappers around DB updates
+**TUI banner (commit `fcc49d0`):**
+- `aureon_agent/tui.py:print_banner()` now renders pixel-art `AUREON-AGENT` wordmark
+- 5x7 pixel font (same as `scripts/generate_banner.py`) rendered with unicode block chars (█)
+- Warm orange gradient: top row `#FFD24A`, middle `#FF8A2B`, bottom `#E85D04` (matching `assets/banner.svg`)
+- Top + bottom accent bars in `#E85D04`
+- Version tagline + GitHub URL at bottom
+- Shows in: `aureon-agent-doctor`, `aureon-agent setup`, `aureon-agent postinstall`
+**Bug fixes:**
+- `1015753`: `channels/telegram.py:84-95` — when LLM returns empty final response, fall back to streamed text from `state["text"]` (accumulates all rounds' tokens via `on_token` callback). If both empty, show "(no response from LLM — try again or simplify your message)".
+- `c42d136`: `aureon_agent/tools/terminal.py` — accept string commands (not just lists). LLMs naturally send `"ls -la /path"` (string), but the tool rejected them with "command must be a list". Now `shlex.split()` the string. JSON schema changed to `oneOf: [array, string]`.
+- `3894977`: `aureon_agent/tools/terminal.py` — expand `~` in path-like arguments (`subprocess.run` with `shell=False` doesn't expand `~`). `agent_runtime.py` — force final summary call after `MAX_TOOL_ROUNDS=5` with no text: extra LLM call without tools, system prompt says "You have used all your tool calls. Now provide a final text response."
+- `503f2ce`: `agent_runtime.py` — fix cron tools DB path: single `dirname(__file__)` not double. `agent_runtime.py` is at project root, not inside `aureon_agent/`. Was looking for `data/cron_jobs.db` at `~/dev-shared/projects/data/` instead of `~/dev-shared/projects/aureon-agent/data/`.
+**Stale `.pyc` lesson:** Bot started at 00:18:08 with fix deployed at 00:17:19, but returned "No cron jobs configured" until restarted again. Root cause: Python used a stale `.pyc` (compiled at 00:17:07 from pre-fix source) because `.pyc` timestamp was newer than source timestamp. Fix: delete `__pycache__/agent_runtime*.pyc` + restart. See lessons.md L-006.
+**Verified on dev at `503f2ce`:**
+- 37/37 tests pass (13 existing + 24 cron)
+- `aureon-agent cron list` shows `homelab-health-daily` job (matches Hermes)
+- Bot responds to all Telegram messages (no more "(no response)")
+- `_cron_list()` returns real job `31168652` from Telegram chat
+- TUI banner renders pixel-art wordmark in orange gradient
+**Branch state:** `dev` at `503f2ce`, 2 branches (dev, main), 0 open PRs
+**Modified:** `agent_runtime.py` (+188 LoC for cron tools + DB path fix), `aureon_agent/tui.py` (+69 LoC for pixel banner), `channels/telegram.py` (+15 LoC for streamed fallback), `aureon_agent/tools/terminal.py` (+22 LoC for string + `~` expansion), `tasks/todo.md`, `tasks/DEVLOG.md`, `tasks/lessons.md`
+
+---
+
 ## 2026-07-14 — Phase 9: Cron Scheduler (local session, branch `feat/aureon-agent-cron-scheduler`)
 **Did:** Built the full cron scheduler subsystem per `tasks/kickoff-cron-scheduler.md`. Same architecture as Hermes + OpenClaw: scheduler ticks every 60s inside the bot process, checks for due jobs, spawns isolated agent runs via `agent_runtime.run()`, delivers output to Telegram/Discord via `channels/router.py`. Jobs persist in SQLite across restarts.
 **Built:**
