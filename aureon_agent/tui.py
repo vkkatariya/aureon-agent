@@ -12,11 +12,76 @@ from aureon_agent import __version__
 
 console = Console()
 
+# 5x7 pixel font (same as scripts/generate_banner.py)
+_PIXEL_FONT = {
+    "A": [" ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"],
+    "U": ["#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
+    "R": ["#### ", "#   #", "#   #", "#### ", "# #  ", "#  # ", "#   #"],
+    "E": ["#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####"],
+    "O": [" ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
+    "N": ["#   #", "##  #", "# # #", "# # #", "#  ##", "#   #", "#   #"],
+    "G": [" ### ", "#   #", "#    ", "# ###", "#   #", "#   #", " ### "],
+    "T": ["#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  "],
+    "-": ["     ", "     ", "     ", " ### ", "     ", "     ", "     "],
+    " ": ["     ", "     ", "     ", "     ", "     ", "     ", "     "],
+}
+
+# Warm orange gradient matching assets/banner.svg
+# Top: #FFD24A (bright), Middle: #FF8A2B (main), Bottom: #E85D04 (deep)
+_GRADIENT_COLORS = ["#FFD24A", "#FFB347", "#FF8A2B", "#FF8A2B", "#E85D04", "#E85D04", "#E85D04"]
+
+
+def _render_pixel_text(text: str, char_gap: int = 2) -> list[str]:
+    """Render text as 7 rows of unicode block chars (█ for filled, space for empty).
+    Each char is 5 cols wide, chars separated by char_gap spaces.
+    Returns 7 strings, each is one row of the pixel art.
+    """
+    rows = ["", "", "", "", "", "", ""]
+    for i, ch in enumerate(text.upper()):
+        glyph = _PIXEL_FONT.get(ch, _PIXEL_FONT[" "])
+        for row_idx in range(7):
+            row_str = glyph[row_idx]
+            # Convert '#' to '█' and ' ' to ' '
+            rendered = "".join("█" if c == "#" else " " for c in row_str)
+            rows[row_idx] += rendered
+            if i < len(text) - 1:
+                rows[row_idx] += " " * char_gap
+    return rows
+
+
 def print_banner():
-    banner = Text("🦾 Aureon Agent Setup", justify="center", style="bold cyan")
-    banner.append(f"\nVersion {__version__}", style="dim")
-    banner.append("\nWelcome to aureon-agent setup", style="italic")
-    console.print(Panel(banner, border_style="cyan"))
+    """Print pixel-art AUREON-AGENT banner matching assets/banner.svg style.
+    
+    Renders the wordmark in warm orange gradient on dark background,
+    with top + bottom accent bars (matching the SVG banner).
+    """
+    wordmark = "AUREON-AGENT"
+    pixel_rows = _render_pixel_text(wordmark, char_gap=2)
+    
+    # Wordmark is 82 chars wide (12 chars × 5 cols + 11 gaps × 2). Add 6 padding.
+    bar_width = 88
+    
+    # Build a Rich Text with gradient: each row gets its own color from the gradient
+    banner = Text()
+    
+    # Top accent bar (orange line)
+    banner.append("━" * bar_width + "\n", style="#E85D04")
+    
+    # Pixel art wordmark (7 rows, each row colored per gradient position)
+    for row_idx, row in enumerate(pixel_rows):
+        color = _GRADIENT_COLORS[row_idx]
+        centered = row.center(bar_width)
+        banner.append(centered + "\n", style=f"bold {color}")
+    
+    # Bottom accent bar
+    banner.append("━" * bar_width + "\n", style="#E85D04")
+    
+    # Version + tagline
+    tagline = f"v{__version__} · OLLAMA + TELEGRAM · DOCTRINE-AWARE"
+    banner.append(tagline.center(bar_width) + "\n", style="dim white")
+    banner.append("github.com/vkkatariya/aureon-agent".center(bar_width), style="dim #FF8A2B")
+    
+    console.print(banner)
 
 def print_section(title: str, body: str = ""):
     console.print(f"\n[bold cyan]▶ {title}[/bold cyan]")
