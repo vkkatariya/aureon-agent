@@ -85,8 +85,16 @@ async def terminal_tool(context: dict, command, timeout: int = 30) -> str:
         
     # Execute
     try:
+        # Expand ~ in path-like arguments (subprocess.run with shell=False doesn't expand)
+        expanded_command = []
+        for arg in command:
+            if isinstance(arg, str) and arg.startswith('~'):
+                expanded_command.append(os.path.expanduser(arg))
+            else:
+                expanded_command.append(arg)
+        
         process = subprocess.run(
-            command,
+            expanded_command,
             shell=False,
             capture_output=True,
             text=True,

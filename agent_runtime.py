@@ -200,7 +200,6 @@ class AgentRuntime:
         ])
 
         response_text = ""
-
         rounds = 0
         while rounds < MAX_TOOL_ROUNDS:
             rounds += 1
@@ -260,6 +259,23 @@ class AgentRuntime:
             response_text = result["text"] or ""
             logger.info("agent.run: round %d ended with text=%r tool_calls=%d", rounds, response_text[:100] if response_text else "", len(result.get("tool_calls") or []))
             break
+
+        # If we hit MAX_TOOL_ROUNDS without a final text response, force one more call
+        # without tools so the LLM has to summarize what it learned.
+        if not response_text and rounds >= MAX_TOOL_ROUNDS:
+            logger.warning("agent.run: hit MAX_TOOL_ROUNDS=%d with no text, forcing final summary call", MAX_TOOL_ROUNDS)
+            summary_prompt = system_prompt + "\n\n---\n\nYou have used all your tool calls. Now provide a final text response to the user based on what you learned. Do not call any more tools."
+            final_body = {
+                "model": self.model,
+                "messages": [{"role": "system", "content": summary_prompt}] + messages + [{"role": "user", "content": "[system] Summarize your findings as a final response to the user. Do not call tools."}],
+                "stream": True,
+            }
+            try:
+                final_result = await self._stream(self.base_url, self.api_key, final_body, on_token)
+                response_text = final_result["text"] or ""
+                logger.info("agent.run: forced summary call returned text=%r (length=%d)", response_text[:100] if response_text else "", len(response_text))
+            except Exception as e:
+                logger.error("agent.run: forced summary call failed: %s", e)
 
         logger.info("agent.run: returning response_text=%r (length=%d)", response_text[:100] if response_text else "", len(response_text))
         return response_text
