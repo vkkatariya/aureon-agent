@@ -33,6 +33,37 @@ WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
 
+def _parse_mcp_servers() -> list[dict]:
+    """Parse MCP server configurations from environment variables.
+
+    Convention: each MCP server has an enable flag + its required env vars.
+    Returns list of dicts ready for MCPManager.add_server(**cfg).
+    """
+    servers = []
+
+    # Notion MCP server (stdio)
+    notion_token = os.getenv("NOTION_TOKEN")
+    if notion_token:
+        servers.append({
+            "server_name": "notion",
+            "command": "mcp-server-notion",
+            "args": [],
+            "env": {"NOTION_TOKEN": notion_token},
+        })
+
+    # GitHub MCP server (stdio) — Phase 7.4, disabled by default
+    github_token = os.getenv("GITHUB_MCP_TOKEN")
+    if github_token:
+        servers.append({
+            "server_name": "github",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
+        })
+
+    return servers
+
+
 async def _start_health_server():
     port = os.getenv("HEALTH_PORT")
     if not port:
@@ -87,6 +118,27 @@ async def main():
         fallback_api_key=os.getenv("OLLAMA_API_KEY"),
     )
 
+    # ── MCP servers ───────────────────────────────────────────────
+    from aureon_agent.mcp_client import MCPManager
+    from aureon_agent.tool_registry import ToolRegistry
+
+    mcp_manager = MCPManager()
+
+    # Connect configured MCP servers (fail soft — log warning, continue without)
+    mcp_servers = _parse_mcp_servers()
+    for server_cfg in mcp_servers:
+        ok = await mcp_manager.add_server(**server_cfg)
+        if ok:
+            logger.info("MCP server '%s' connected (%d tools)",
+                        server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
+
+    # ── Tool registry ─────────────────────────────────────────────
+    registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)
+    agent.setup_registry(registry)
+    logger.info("tool registry: %d tools (%s)",
+                registry.tool_count,
+                ", ".join(f"{k}: {len(v)}" for k, v in registry.list_tools_by_backend().items() if v))
+
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
 
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -136,6 +188,7 @@ async def main():
     logger.info("shutting down")
 
     await cron.stop()
+    await mcp_manager.disconnect_all()
     reload_task.cancel()
     await router.stop_all()
     if channels_task:

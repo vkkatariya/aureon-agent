@@ -3,6 +3,28 @@
 
 ---
 
+## 2026-07-16 — Phase 7.1: MCP foundation + Notion PoC (branch `feat/aureon-agent-phase7-mcp`)
+**Did:** Built the MCP integration foundation: MCP client module, unified tool registry, agent_runtime refactor (tool dispatch through registry instead of elif chain), Notion MCP server wiring, CLI + doctor + tests + docs.
+**Built:**
+- `aureon_agent/mcp_client.py` (new, ~250 LoC): `MCPClient` class for single-server stdio connections + `MCPManager` for multi-server management. Full lifecycle: connect → list_tools → call_tool → disconnect. Tool schema translation (MCP inputSchema → OpenAI function parameters). Tool name prefixing (`mcp_<server>_<tool>`). Graceful failure: server crash → error dict returned, no agent crash.
+- `aureon_agent/tool_registry.py` (new, ~160 LoC): `ToolRegistry` merges 3 backends (skills, inline, MCP) into one flat tool list for the LLM. Deduplication: MCP wins on name collision (WARN logged). Dispatch routes to correct backend. Internal MCP metadata stripped from LLM-facing schemas. Cache invalidation via `refresh()`.
+- `agent_runtime.py` (refactored): Extracted 16 hardcoded tool schemas to `INLINE_TOOL_SCHEMAS` list. Replaced 20-line elif dispatch chain with `registry.dispatch(name, args, context)`. Tools registered via `setup_registry()` → `_register_inline_tools()`. All async handler wrappers for sync tools (FileTool.read_file, TodoTool, etc.). Backward-compatible: falls back to skill-only dispatch if no registry set.
+- `aureon_agent/cli.py`: Added `_parse_mcp_servers()` (reads `NOTION_TOKEN`/`GITHUB_MCP_TOKEN` from env), `MCPManager` wiring (connect at boot, disconnect on shutdown), `ToolRegistry` construction + `agent.setup_registry()`.
+- `aureon_agent/__main__.py`: Added `aureon-agent mcp list` CLI subcommand (connects to configured servers, shows Rich table of tools).
+- `aureon_agent/doctor.py`: Added `check_mcp_servers()` — verifies env vars + binary presence for configured servers.
+- `requirements.txt`: Added `mcp>=1.0`.
+- `docs/mcp.md` (new): Architecture diagram, configuration guide, naming conventions, failure handling, CLI, security model, troubleshooting.
+- `tests/test_mcp_client.py` (new, 14 tests): Schema translation, tool prefixing, call routing, error handling (not connected, server crash, missing binary).
+- `tests/test_tool_registry.py` (new, 12 tests): Merging, deduplication, dispatch routing, cache refresh, backend query.
+**Verified:** 63/63 pytest tests pass (37 existing + 26 new). Zero regressions.
+**Key design decisions:**
+- Tool schemas extracted to a list but kept inline (not moved to separate files) — they're tightly coupled to agent state (cron tools access DB, clarify pauses the loop).
+- MCP tools prefixed `mcp_<server>_<tool>` to avoid collision with local skills.
+- Registry uses 3-tier merge order: skills → inline → MCP. Last wins on collision.
+- HTTP/SSE transport deferred to Phase 7.2 (Gmail needs it).
+
+---
+
 ## 2026-07-15 — Phase 9.5: Cron tools + TUI banner + bug fixes (this session)
 **Did:** Added 5 cron tools to the agent's tool registry (so Captain can create/list/remove cron jobs via Telegram chat), replaced the TUI banner with a pixel-art version matching the README SVG, and fixed 4 bugs that were causing "(no response from LLM)" on Telegram.
 **Cron tools (commit `062702f`):**

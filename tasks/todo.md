@@ -191,19 +191,20 @@
 
 Both backends expose tools to the LLM in the same tool-use format. LLM doesn't know or care which backend served the tool.
 
-**Sub-task 15: MCP client + tool registry merger (Phase 7.1)**
-- [ ] `mcp_client.py` — connection manager (stdio + HTTP/SSE), graceful failure per server
-- [ ] `tool_registry.py` — merge `skill_loader.get_tools()` + `mcp_client.list_tools()` into one flat list
-- [ ] Add `mcp` to `requirements.txt`
-- [ ] Update `agent_runtime.py` to route tool calls to right backend (skill_loader.execute_tool vs mcp_client.call_tool)
-- [ ] Test: 1 doctrine skill + 1 MCP server both load, both invokable, no double-registration
+**Sub-task 15: MCP client + tool registry merger (Phase 7.1)** ✅
+- [x] `mcp_client.py` — connection manager (stdio), graceful failure per server, MCPManager for multi-server
+- [x] `tool_registry.py` — merge `skill_loader.get_tools()` + inline tools + `mcp_client.list_tools()` into one flat list
+- [x] Add `mcp` to `requirements.txt`
+- [x] Update `agent_runtime.py` to route tool calls through `ToolRegistry.dispatch()` (skills / inline / MCP backends)
+- [x] Test: 14 MCP client tests + 12 tool registry tests, all passing
+- [x] Doctor health check: `check_mcp_servers()` verifies env vars + binary presence
+- [x] CLI: `aureon-agent mcp list` shows configured servers + their tools
 
 **Sub-task 16: First MCP server — Notion (Phase 7.2)**
-- [ ] Decide: replace existing `notion` skill (full migration) OR run both (parallel)
-- [ ] Recommend: **keep notion skill as fallback, add Notion MCP server as primary** — easy rollback
-- [ ] Use official `mcp-server-notion` if available, else community `@gongrzhe/notion-mcp-server`
-- [ ] Pass `NOTION_TOKEN` via subprocess env
-- [ ] Test: list pages, create page, query database — all via MCP
+- [x] Use `mcp-server-notion` via stdio, `NOTION_TOKEN` via subprocess env
+- [x] Config: `_parse_mcp_servers()` in `cli.py` reads `NOTION_TOKEN` from env
+- [ ] Live test: list pages, create page, query database — all via MCP (requires real token)
+
 
 **Sub-task 17: Gmail MCP server (Phase 7.3)**
 - [ ] `gmail-mcp-server` (community) or roll our own
