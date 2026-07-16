@@ -172,11 +172,15 @@ def check_cron_scheduler() -> Tuple[str, str]:
 def check_mcp_servers() -> Tuple[str, str]:
     import shutil
     servers = []
-    # Check Notion
-    notion_token = os.environ.get("NOTION_TOKEN")
+    # Check Notion — must match cli.py logic exactly
+    # Reads NOTION_API_KEY (hermes-style) OR NOTION_TOKEN (fallback),
+    # uses the absolute binary path (systemd PATH lacks ~/.npm-global/bin).
+    notion_token = os.environ.get("NOTION_API_KEY") or os.environ.get("NOTION_TOKEN")
     if notion_token:
-        binary = shutil.which("mcp-server-notion")
-        servers.append(("notion", bool(binary)))
+        notion_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/notion-mcp-server/build/index.js"
+        )
+        servers.append(("notion", os.path.exists(notion_bin)))
     # Check GitHub
     github_token = os.environ.get("GITHUB_MCP_TOKEN")
     if github_token:

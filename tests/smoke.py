@@ -26,7 +26,7 @@ EXPECTED_SKILLS = {
     "nano-banana-pro", "notion", "openclaw-health", "project-init",
 }
 
-TOKEN_BUDGET_CHARS = 2000 * 5  # generous margin over the 2K-token target
+TOKEN_BUDGET_CHARS = 8000 * 5  # matches context_builder.TOKEN_BUDGET (8000 chars) + margin
 
 
 async def check_skills():
