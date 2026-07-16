@@ -8,7 +8,19 @@ ALLOWED_AUTO_RUN = {
     "ls", "cat", "grep", "find", "pwd", "echo", "date", "whoami",
     "hostname", "df", "du", "wc", "head", "tail", "which", "env"
 }
+# Cron jobs run unattended skills (e.g. homelab-health) that need read-only
+# diagnostic commands. These are safe (no writes/destroys) so cron auto-approves them.
+CRON_ALLOWED_AUTO_RUN = ALLOWED_AUTO_RUN | {
+    "docker", "systemctl", "curl", "tailscale", "ping", "ps", "free",
+    "uptime", "uname", "ip", "ss", "journalctl", "git", "stat", "readlink"
+}
 GIT_ALLOWED = {"status", "log", "diff"}
+# Subcommands that are safe for cron auto-approval
+CRON_SAFE_SUBCOMMANDS = {
+    ("systemctl", "status"), ("systemctl", "--user"), ("docker", "ps"),
+    ("docker", "images"), ("docker", "version"), ("git", "status"),
+    ("git", "log"), ("git", "diff"),
+}
 
 DESTRUCTIVE_CMDS = {
     "rm", "mv", "chmod", "kill", "pkill", "drop", "delete", "truncate", "dd", "mkfs", "fdisk"
@@ -34,13 +46,17 @@ def is_destructive(cmd_parts: list) -> bool:
             
     return False
 
-def is_auto_run(cmd_parts: list) -> bool:
+def is_auto_run(cmd_parts: list, cron: bool = False) -> bool:
     if not cmd_parts:
         return False
     base_cmd = cmd_parts[0]
-    if base_cmd in ALLOWED_AUTO_RUN:
+    allowed = CRON_ALLOWED_AUTO_RUN if cron else ALLOWED_AUTO_RUN
+    if base_cmd in allowed:
         return True
     if base_cmd == "git" and len(cmd_parts) > 1 and cmd_parts[1] in GIT_ALLOWED:
+        return True
+    # Safe subcommand pairs (e.g. systemctl status, docker ps) for cron
+    if cron and len(cmd_parts) > 1 and tuple(cmd_parts[:2]) in CRON_SAFE_SUBCOMMANDS:
         return True
     return False
 
@@ -69,13 +85,23 @@ async def terminal_tool(context: dict, command, timeout: int = 30) -> str:
     if not command:
         return "Error: Empty command."
         
+    # Cron jobs run unattended — no Captain to confirm. Auto-approve
+    # allowlisted read-only commands; deny anything else without hanging.
+    session_id = context.get("session_id", "") if isinstance(context, dict) else ""
+    is_cron = session_id.startswith("cron:")
+    
     # Validation
     destructive = is_destructive(command)
-    auto_run = is_auto_run(command)
+    auto_run = is_auto_run(command, cron=is_cron)
     
     cmd_str = shlex.join(command)
     
     if destructive or not auto_run:
+        if is_cron:
+            # No human in a cron session to confirm — deny non-allowlisted
+            # commands so the job doesn't hang on a confirmation that never comes.
+            log_tool_usage("terminal", {"command": command, "timeout": timeout}, "Denied (cron, no confirm)", "deny", "Denied")
+            return "Command execution denied: cron jobs can only run allowlisted read-only commands (ls, cat, grep, find, docker ps, systemctl status, curl, etc)."
         # Require confirmation for anything not explicitly auto-run
         confirm_text = f"Agent wants to run a shell command:\n`{cmd_str}`\n\nIs this allowed?"
         confirmed = await confirm_with_captain(context, confirm_text)
