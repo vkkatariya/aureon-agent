@@ -314,3 +314,37 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - [ ] Sub-task 10: Postinstall command
 - [ ] Sub-task 11: Top-level CLI glue
 - [ ] Sub-task 12: README + docs
+
+## Phase 8: Layered Context Builder (Option B) ✅
+
+**Goal:** Fix the broken/lean context builder. Agent's "brain" (SOUL + IDENTITY + WORKFLOW + MEMORY + USER) must load EVERY turn as the always-on identity/preference layer. Operational files (skills, todo, devlog, lessons) stay JIT — bounded cost, scales.
+
+**Decision (2026-07-16, Captain's call):** Option B — layered context. Rejected Option A (full `*.md` load every turn — blows Ollama cloud quota, unbounded) and Option C (manifest + JIT read — Captain explicitly does NOT want JIT for the brain).
+
+**What shipped (commit `TBD` → merged `TBD`, branch `feat/aureon-agent-context-layers`):**
+- [x] `context_builder.py` rewrite — `_load_brain()` loads SOUL/IDENTITY/WORKFLOW/MEMORY/USER in priority order, each labeled section. Missing files skipped gracefully.
+- [x] `ContextConfig` dataclass — `brain_files` + `token_budget`, overridable via `AUREON_CONTEXT_BRAIN_FILES` + `AUREON_CONTEXT_TOKEN_BUDGET` env. Empty `brain_files=[]` = JIT-only mode.
+- [x] Priority-aware trim — JIT sections dropped FIRST when over budget, brain never trimmed unless absolutely necessary. Budget raised 2000 → 8000 chars (32K ≈ 8K tokens; brain layer ≈ 25K chars fits + JIT headroom).
+- [x] `agent_runtime.py` — `build_system_prompt()` now passes `ContextConfig.from_env()`.
+- [x] `doctor.py` — `check_context_brain()` reports all 5 brain files present + token estimate (WARN, not fail, on missing).
+- [x] `tests/test_context_builder.py` — 7 tests: brain loads all 5, missing-file graceful, build includes brain, env override, empty-list JIT-only, priority trim protects brain, config env override.
+- [x] `docs/` — (none yet; context behavior documented in kickoff + todo)
+
+**Acceptance criteria (all met):**
+- [x] `build_system_prompt()` loads SOUL + IDENTITY + WORKFLOW + MEMORY + USER every turn (was only SOUL + IDENTITY — WORKFLOW/MEMORY/USER were MISSING)
+- [x] Missing brain file → graceful skip, no crash
+- [x] Over-budget trim drops JIT first, brain protected
+- [x] `AUREON_CONTEXT_BRAIN_FILES` + `AUREON_CONTEXT_TOKEN_BUDGET` env overrides work
+- [x] Skills menu (names only) still injected
+- [x] Memory notes (SQLite) still injected
+- [x] `doctor` reports brain file status
+- [x] 70/70 tests pass (63 existing + 7 new)
+- [x] No new dependencies
+- [x] Bot live under systemd, brain present every turn
+
+**Note:** Brain layer is ~6.7K tokens (MEMORY.md dominates at ~4.7K — it's the accumulated knowledge of Captain). Fits comfortably in 1M + 200K models. On smaller models, `AUREON_CONTEXT_TOKEN_BUDGET` can tighten.
+
+**References:**
+- Kickoff: `tasks/kickoff-phase8-context.md`
+- `context_builder.py` — `_load_brain()`, `ContextConfig`, priority trim
+- `agent_runtime.py:352` — `build_system_prompt()` call site

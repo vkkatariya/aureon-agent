@@ -58,6 +58,25 @@ def check_workspace() -> Tuple[str, str]:
         return "❌", f"Broken symlinks: {', '.join(broken)}"
     return "✅", "All symlinks resolve"
 
+def check_context_brain() -> Tuple[str, str]:
+    """Verify the always-on brain layer files exist (WARN, not fail)."""
+    from context_builder import DEFAULT_BRAIN_FILES
+    missing = []
+    total_chars = 0
+    for fname in DEFAULT_BRAIN_FILES:
+        path = os.path.join(WORKSPACE_DIR, fname)
+        if not os.path.exists(path):
+            missing.append(fname)
+        else:
+            try:
+                total_chars += len(open(path).read())
+            except Exception:
+                pass
+    est_tokens = total_chars // 4
+    if missing:
+        return "⚠️", f"Brain files missing: {', '.join(missing)} (agent will run with partial brain)"
+    return "✅", f"All 5 brain files present (~{est_tokens} tokens)"
+
 def check_tools_allowlist() -> Tuple[str, str]:
     from aureon_agent.tools.base import WorkspaceBoundTool
     if not os.path.exists(WorkspaceBoundTool.ALLOWED_RW):
@@ -181,6 +200,7 @@ def main():
         ("Virtual Env", check_venv),
         ("Config (.env)", check_env),
         ("Workspace", check_workspace),
+        ("Context Brain", check_context_brain),
         ("Tools Allowlist", check_tools_allowlist),
         ("Claude CLI", check_claude_cli),
         ("Plan Node", check_plan_node),
