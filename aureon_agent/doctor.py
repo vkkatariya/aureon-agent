@@ -150,6 +150,27 @@ def check_cron_scheduler() -> Tuple[str, str]:
     except Exception as e:
         return "❌", f"DB error: {e}"
 
+def check_mcp_servers() -> Tuple[str, str]:
+    import shutil
+    servers = []
+    # Check Notion
+    notion_token = os.environ.get("NOTION_TOKEN")
+    if notion_token:
+        binary = shutil.which("mcp-server-notion")
+        servers.append(("notion", bool(binary)))
+    # Check GitHub
+    github_token = os.environ.get("GITHUB_MCP_TOKEN")
+    if github_token:
+        binary = shutil.which("npx")
+        servers.append(("github", bool(binary)))
+    if not servers:
+        return "🟡", "No MCP servers configured (skills-only mode)"
+    missing = [name for name, found in servers if not found]
+    if missing:
+        return "❌", f"Binary missing for: {', '.join(missing)}"
+    names = [name for name, _ in servers]
+    return "✅", f"{len(servers)} server(s) configured: {', '.join(names)}"
+
 def main():
     print_banner()
     
@@ -167,6 +188,7 @@ def main():
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),
         ("Cron Scheduler", check_cron_scheduler),
+        ("MCP Servers", check_mcp_servers),
         ("Smoke Tests", check_smoke_tests)
     ]
     

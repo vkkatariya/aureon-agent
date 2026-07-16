@@ -9,6 +9,58 @@ from aureon_agent.setup import main as run_setup
 from aureon_agent.doctor import main as run_doctor
 from aureon_agent.postinstall import main as run_postinstall
 
+
+def cmd_mcp_list(args):
+    """List configured MCP servers and their tools."""
+    import asyncio
+    asyncio.run(_cmd_mcp_list_async())
+
+
+async def _cmd_mcp_list_async():
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
+    from aureon_agent.cli import _parse_mcp_servers
+    from aureon_agent.mcp_client import MCPManager, MCPConfigError
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    servers = _parse_mcp_servers()
+
+    if not servers:
+        console.print("[yellow]No MCP servers configured.[/yellow]")
+        console.print("Set NOTION_TOKEN or GITHUB_MCP_TOKEN in .env to enable MCP servers.")
+        return
+
+    manager = MCPManager()
+    table = Table(title="MCP Servers")
+    table.add_column("Server", style="cyan")
+    table.add_column("Status")
+    table.add_column("Tools", justify="right")
+    table.add_column("Tool Names")
+
+    for cfg in servers:
+        try:
+            ok = await manager.add_server(**cfg)
+            if ok:
+                client = manager.clients[cfg["server_name"]]
+                tool_names = [t["name"] for t in client.tools]
+                table.add_row(
+                    cfg["server_name"],
+                    "[green]connected[/green]",
+                    str(len(tool_names)),
+                    ", ".join(tool_names) if tool_names else "—",
+                )
+            else:
+                table.add_row(cfg["server_name"], "[red]failed[/red]", "0", "—")
+        except Exception as e:
+            table.add_row(cfg["server_name"], f"[red]error: {e}[/red]", "0", "—")
+
+    console.print(table)
+    await manager.disconnect_all()
+
 def cmd_stop(args):
     subprocess.run(["systemctl", "--user", "stop", "aureon-agent.service"], check=False)
 
@@ -167,6 +219,11 @@ def main():
     # cron (subcommand group)
     register_cron_subparser(subparsers)
     
+    # mcp
+    p_mcp = subparsers.add_parser("mcp", help="MCP server management")
+    mcp_sub = p_mcp.add_subparsers(dest="mcp_command")
+    mcp_sub.add_parser("list", help="List configured MCP servers and their tools")
+    
     # version
     p_version = subparsers.add_parser("version", help="Print version")
     
@@ -205,6 +262,11 @@ def main():
         cmd_subagent_log(args)
     elif args.command == "cron":
         cmd_cron(args)
+    elif args.command == "mcp":
+        if hasattr(args, 'mcp_command') and args.mcp_command == "list":
+            cmd_mcp_list(args)
+        else:
+            print("Usage: aureon-agent mcp list")
     elif args.command == "version":
         cmd_version(args)
 
