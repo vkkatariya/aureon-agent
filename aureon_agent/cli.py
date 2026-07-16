@@ -42,14 +42,24 @@ def _parse_mcp_servers() -> list[dict]:
     servers = []
 
     # Notion MCP server (stdio)
-    notion_token = os.getenv("NOTION_TOKEN")
+    # Reads NOTION_API_KEY (hermes-style) or NOTION_TOKEN (fallback).
+    # Server binary is `notion-mcp-server` (NOT the unscoped
+    # `mcp-server-notion` canary — that's a typosquat/security risk).
+    notion_token = os.getenv("NOTION_API_KEY") or os.getenv("NOTION_TOKEN")
     if notion_token:
-        servers.append({
-            "server_name": "notion",
-            "command": "mcp-server-notion",
-            "args": [],
-            "env": {"NOTION_TOKEN": notion_token},
-        })
+        # Absolute path — systemd service PATH may not include ~/.npm-global/bin
+        notion_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/notion-mcp-server/build/index.js"
+        )
+        if not os.path.exists(notion_bin):
+            logger.warning("Notion MCP binary not found at %s", notion_bin)
+        else:
+            servers.append({
+                "server_name": "notion",
+                "command": "node",
+                "args": [notion_bin],
+                "env": {"NOTION_TOKEN": notion_token},
+            })
 
     # GitHub MCP server (stdio) — Phase 7.4, disabled by default
     github_token = os.getenv("GITHUB_MCP_TOKEN")
