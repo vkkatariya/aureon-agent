@@ -200,10 +200,14 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - [x] Doctor health check: `check_mcp_servers()` verifies env vars + binary presence
 - [x] CLI: `aureon-agent mcp list` shows configured servers + their tools
 
-**Sub-task 16: First MCP server — Notion (Phase 7.2)**
-- [x] Use `mcp-server-notion` via stdio, `NOTION_TOKEN` via subprocess env
-- [x] Config: `_parse_mcp_servers()` in `cli.py` reads `NOTION_TOKEN` from env
-- [ ] Live test: list pages, create page, query database — all via MCP (requires real token)
+**Sub-task 16: First MCP server — Notion (Phase 7.2)** ✅
+- [x] Install `notion-mcp-server` v2.12.0 (real upstream) via npm global. NOT the unscoped `mcp-server-notion` (npm security canary — typosquat/bug-bounty trap, 404 on `@anthropic/mcp-server-notion` + `@gongrzhe/notion-mcp-server`).
+- [x] `cli.py:_parse_mcp_servers()` — command=`node` + abs path to `~/.npm-global/lib/node_modules/notion-mcp-server/build/index.js` (systemd PATH lacks `~/.npm-global/bin`). Reads `NOTION_API_KEY` (hermes-style key in `~/.hermes/.env`) OR `NOTION_TOKEN` (fallback) → passes as `NOTION_TOKEN` to server env.
+- [x] `NOTION_TOKEN` written to aureon-agent's `.env` (chmod 600) by reading hermes's `NOTION_API_KEY` programmatically — value never displayed.
+- [x] Live test (2026-07-16, this session): restarted bot → `mcp list` shows `notion | connected | 2 tools` (`mcp_notion_notion_execute`, `mcp_notion_notion_describe`). Agent ran a turn with "list my Notion pages" → called `mcp_notion_notion_execute` → real Notion API → returned live pages (Websites Hub, Timeline:, .md to PDF, zeb, dc AG, XTP GmbH, DFS Deutsche Flugsicherung, Sopra Steria, Actemium, Patch & Sparks). End-to-end verified, NOT mocked.
+- [x] Commit `547414d` (fix: Notion MCP live wiring) → merged to `dev`.
+
+**Note:** Phase 7.1 was originally marked done by the coding agent but the actual Notion server was never installed/configured until this session. The foundation (mcp_client.py, tool_registry.py) shipped earlier; the live server integration is what closed it out.
 
 
 **Sub-task 17: Gmail MCP server (Phase 7.3)**

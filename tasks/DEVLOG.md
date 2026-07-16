@@ -1,7 +1,33 @@
 # Dev Log
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
----
+--
+## 2026-07-16 (later) — Phase 7.1 Notion MCP LIVE + Phase 8 context layers
+
+**Phase 7.1 Notion MCP — finally live-tested:**
+The earlier Phase 7.1 entry (below) marked the foundation done, but the actual Notion server was never installed/configured. Closed it out this session:
+- Installed `notion-mcp-server` v2.12.0 (real upstream via npm global). Explicitly AVOIDED the unscoped `mcp-server-notion` — npm flagged it as a **security canary** ("not for production use, part of authorized bug bounty research project") = typosquat/confusion trap. Also 404 on `@anthropic/mcp-server-notion` + `@gongrzhe/notion-mcp-server` (old names).
+- `cli.py:_parse_mcp_servers()` fixed: command=`node` + **absolute path** to `~/.npm-global/lib/node_modules/notion-mcp-server/build/index.js` (systemd service PATH lacks `~/.npm-global/bin`). Reads `NOTION_API_KEY` (hermes-style key in `~/.hermes/.env`) OR `NOTION_TOKEN` (fallback) → passes as `NOTION_TOKEN` to server env.
+- `NOTION_TOKEN` written to aureon-agent's `.env` (chmod 600) by reading hermes's `NOTION_API_KEY` programmatically — **value never displayed** (Captain's no-secrets-in-chat rule).
+- Restarted bot → `mcp list` shows `notion | connected | 2 tools` (`mcp_notion_notion_execute`, `mcp_notion_notion_describe`). Auth OK: "connected as Agent Integration (NOTION_TOKEN)".
+- **End-to-end live test:** ran an agent turn with "list my Notion pages" → LLM called `mcp_notion_notion_execute` → real Notion API → returned Captain's actual pages. NOT mocked.
+- Committed `547414d` (fix: Notion MCP live wiring) → merged to `dev`.
+
+**Phase 8 — Layered Context Builder (Option B), built directly (no agent dispatch):**
+- The agent's "brain" (SOUL + IDENTITY + WORKFLOW + MEMORY + USER) was NOT loading correctly — old `context_builder.py` only loaded SOUL + IDENTITY. WORKFLOW/MEMORY/USER were MISSING entirely.
+- Rewrote `context_builder.py`: `_load_brain()` loads all 5 in priority order, labeled sections, missing files skipped gracefully. New `ContextConfig` dataclass — `brain_files` + `token_budget`, overridable via `AUREON_CONTEXT_BRAIN_FILES` + `AUREON_CONTEXT_TOKEN_BUDGET` env. Empty `brain_files=[]` = JIT-only mode.
+- Priority-aware trim: JIT sections dropped FIRST when over budget, brain protected. Budget raised 2000 → 8000 chars (brain layer ≈25K chars fits + JIT headroom).
+- `doctor.py`: `check_context_brain()` reports all 5 brain files + token estimate (WARN not fail on missing).
+- `tests/test_context_builder.py`: 7 tests. Total 70/70 pass.
+- Decision was Option B (layered) over A (full `*.md` every turn — blows Ollama cloud quota) and C (manifest + JIT read — Captain explicitly does NOT want JIT for the brain).
+- Committed + merged `b850cc0` (Phase 8) → `dev`.
+
+**Also this session:** Cleaned up stale kickoff files (`kickoff.md`, `kickoff-cron-scheduler.md` → removed `ca33973`). Fixed homelab-health cron (terminal tool now auto-approves read-only diagnostic commands for cron sessions — was hanging on confirmation that never came, timing out at 300s). Upgraded `homelab-health` SKILL.md from old OpenClaw v1.0.0 to Hermes v1.2.0 + changed cron prompt from "be concise" to require full structured report — now matches Hermes's daily output.
+
+**State end of session:** `dev` at `547414d`, 2 branches, 0 PRs. Bot live under systemd, brain + Notion MCP both active. Phase 7.1 + 8 fully done + verified.
+
+**Modified:** context_builder.py, aureon_agent/config.py, aureon_agent/doctor.py, agent_runtime.py, aureon_agent/cli.py, tests/test_context_builder.py, tasks/todo.md, tasks/DEVLOG.md. Local-only (not in git): `.env` NOTION_TOKEN, npm global install.
+
 
 ## 2026-07-16 — Phase 7.1: MCP foundation + Notion PoC (branch `feat/aureon-agent-phase7-mcp`)
 **Did:** Built the MCP integration foundation: MCP client module, unified tool registry, agent_runtime refactor (tool dispatch through registry instead of elif chain), Notion MCP server wiring, CLI + doctor + tests + docs.
