@@ -11,7 +11,7 @@ import re
 
 import httpx
 
-from context_builder import build_system_prompt
+from context_builder import build_system_prompt, ContextConfig
 from plan_node import require_plan
 
 logger = logging.getLogger(__name__)
@@ -349,7 +349,10 @@ class AgentRuntime:
         if not ok:
             return reason
 
-        system_prompt = await build_system_prompt(self.workspace_dir, self.skills, self.memory)
+        system_prompt = await build_system_prompt(
+            self.workspace_dir, self.skills, self.memory,
+            ctx_config=ContextConfig.from_env(),
+        )
         if _DESTRUCTIVE_RE.search(last_user):
             system_prompt += f"\n\n---\n\n{AUTO_CLARITY_NOTE}"
 
