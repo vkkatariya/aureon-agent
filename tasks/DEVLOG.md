@@ -2,7 +2,27 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 --
-## 2026-07-16 (later) — Phase 7.1 Notion MCP LIVE + Phase 8 context layers
+## 2026-07-17 — Phase 7.3 Gmail OAuth (Option B) + GitHub live
+
+**Gmail: from plaintext IMAP → OAuth (Captain's call: "storing gmail password in plaintext is risky").**
+- Agent's first attempt (branch `feat/aureon-agent-phase7-mcp-servers`) used `gmail-mcp-imap` (16-char App Password in `.env`) — rejected. Also installed stray `mcp-server-gmail` (unused).
+- Audited: `GongRzhe/Gmail-MCP-Server` (Captain's suggestion) is **ARCHIVED/read-only since 2026-03** — dead dep, ruled out. Google Official Gmail MCP is a hosted remote endpoint, not stdio-on-athena — heavier, ruled out.
+- **Chosen:** `oliverkoast/multi-email-mcp@0.1.0` (stdio, maintained). `gmail-api` provider = OAuth 2.0 `gmail.readonly` scope. Refresh token cached in `tokens/` (gitignored) — NO mailbox password.
+- **Cleanup (mandatory per Captain):** `npm uninstall -g gmail-mcp-imap mcp-server-gmail`. Removed IMAP env reads from cli.py/doctor.py. Branch `feat/aureon-agent-gmail-oauth` (commits `4074e1c` swap, `b09d9d2` env-var fix).
+- **Headless OAuth fix:** `auth.js` bound `127.0.0.1:<ephemeral>` → Google rejected ("doesn't comply with OAuth 2.0 policy"). Patched `src/auth.js` to bind **`localhost:32807` (fixed port)** so Google auto-approves loopback. Registered `http://localhost:32807` in Google Cloud OAuth client (flipped External + added test user).
+- **Token obtained:** `ssh -L 32807:localhost:32807 athena` tunnel → `npm run auth vishal` on athena → opened consent URL on Mac → Google redirected via tunnel → `tokens/vishal.json` saved on athena (chmod 600, gitignored).
+- **`GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET`** added to aureon-agent's `.env` (chmod 600, gitignored) — required at runtime for token refresh. NOT the mailbox password.
+- **Live test VERIFIED end-to-end:** `mcp_gmail_list_recent` → real Gmail API → returned Captain's actual GitHub CI-failure notification emails. 4 tools: search_mail, read_message, list_recent, list_accounts. NOT mocked.
+- Agent's own `live_test_gmail.py` was broken (checked `EMAIL_ADDRESS` for IMAP) — the real verification was done via direct tool-call harness (`/tmp/gmail_tool2.py`), which proved the OAuth server + token + API all work.
+
+**GitHub MCP (from `feat/aureon-agent-phase7-mcp-servers`):**
+- `@modelcontextprotocol/server-github` (deprecated but runs on stdio). cli.py reads `GITHUB_TOKEN` (fallback `GITHUB_MCP_TOKEN`), passes `GITHUB_PERSONAL_ACCESS_TOKEN`. Abs path (systemd PATH lacks `~/.npm-global/bin`).
+- **Live test VERIFIED:** `mcp_github_*` (26 tools) → real API → "No open PRs for vkkatariya/aureon-agent". Real, not mocked.
+
+**State end of session:** `dev` has both (GitHub merged via `feat/aureon-agent-phase7-mcp-servers`; Gmail on `feat/aureon-agent-gmail-oauth`, ready to merge). 77/77 tests pass. Bot NOT yet restarted with both MCP servers live — next step before merge-close: restart bot → `aureon-agent mcp list` shows github + gmail connected.
+
+**Modified:** aureon_agent/cli.py, aureon_agent/doctor.py (GitHub + Gmail OAuth blocks), tests/test_mcp_github.py, tests/test_mcp_gmail.py, tasks/todo.md (Sub-task 17 rewritten), tasks/DEVLOG.md. Local-only (not in git): `.env` (GOOGLE_OAUTH_*, NOTION_TOKEN, GITHUB_TOKEN), `tokens/vishal.json`, `multi-email-mcp/src/auth.js` patch, `npm -g` pkgs.
+
 
 **Phase 7.1 Notion MCP — finally live-tested:**
 The earlier Phase 7.1 entry (below) marked the foundation done, but the actual Notion server was never installed/configured. Closed it out this session:
