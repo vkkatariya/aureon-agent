@@ -47,9 +47,6 @@ DEFAULT_ACCOUNT = "vishal"
 
 # Attachment type gate: only these are downloadable documents.
 DOC_EXT_RE = re.compile(r"\.(pdf|png|jpe?g)$", re.I)
-# Invoice-name signal (D3). Applied only in --strict mode; by default the
-# invoice-subject search is trusted and every document attachment is taken.
-INVOICE_NAME_RE = re.compile(r"rechnung|invoice|factur|账单", re.I)
 
 # Rate-limit defense (§4 of the kickoff).
 BATCH_SIZE = 50

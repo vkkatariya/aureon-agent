@@ -149,10 +149,18 @@ python invoice_pilot.py --strict                  # require invoice token in fil
 node tests/mcp_gmail_download.test.mjs             # deterministic patch smoke (no network)
 python live_test_gmail_download.py                 # live: real Gmail -> real invoice PDF
 
-# Engine C — weekly systemd timer
+# Engine C variant 1 — weekly systemd timer (deterministic script + .seen dedup)
 cp systemd/aureon-invoice.{service,timer} ~/.config/systemd/user/
 systemctl --user enable --now aureon-invoice.timer
 systemctl --user start aureon-invoice.service      # trigger a run manually
+
+# Engine C variant 2 — aureon agent-scheduler job (LLM drives the MCP tools)
+./scripts/seed-invoice-cron.sh                     # register the weekly cron job
+python -m aureon_agent cron list                   # confirm invoice-weekly present
+python -m aureon_agent cron run <job_id>           # queue for the running bot's next tick
+python live_test_invoice_cron.py                   # out-of-process live proof (no bot restart)
+# NOTE: the running bot must be restarted once to load the patched
+# download_attachment tool into its MCP subprocess.
 ```
 
 ### Channel testing (after Phase 3)
