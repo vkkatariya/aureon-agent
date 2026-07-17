@@ -1,0 +1,5 @@
+# Engine A (invoice_pilot.py) — standalone Gmail invoice downloader.
+# Kept separate from the main agent requirements.txt: the bot doesn't need
+# the Google API client, and this script doesn't need the bot's deps.
+google-auth>=2.0
+google-api-python-client>=2.0

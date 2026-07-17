@@ -1,0 +1,83 @@
+--- /home/radxa/.npm-global/lib/node_modules/multi-email-mcp/src/providers/gmail-api.js.bak	2026-07-18 00:26:08.324037578 +0200
++++ /home/radxa/.npm-global/lib/node_modules/multi-email-mcp/src/providers/gmail-api.js	2026-07-18 00:29:00.128263363 +0200
+@@ -8,11 +8,19 @@
+ 
+ import { OAuth2Client } from "google-auth-library";
+ import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
+ import { googleOAuthConfig } from "../config.js";
+ 
+ const API = "https://gmail.googleapis.com/gmail/v1/users/me";
+ export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+ 
++// Rate-limit defense: Gmail returns 429 past ~6000 quota-units/min. Retry
++// transient errors with exponential backoff, honouring Retry-After when sent.
++const MAX_RETRIES = 5;
++const BACKOFF_CAP_MS = 30000;
++const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
++
+ function getClient(account) {
+   const { clientId, clientSecret } = googleOAuthConfig();
+   if (!fs.existsSync(account.tokenFile)) {
+@@ -26,9 +34,24 @@
+   return client;
+ }
+ 
+-async function api(client, path) {
+-  const res = await client.request({ url: `${API}${path}` });
+-  return res.data;
++async function api(client, apiPath) {
++  let attempt = 0;
++  for (;;) {
++    try {
++      const res = await client.request({ url: `${API}${apiPath}` });
++      return res.data;
++    } catch (err) {
++      const status = err?.response?.status;
++      const retryable = status === 429 || (status >= 500 && status <= 504);
++      if (!retryable || attempt >= MAX_RETRIES) throw err;
++      const retryAfter = Number(err?.response?.headers?.["retry-after"]);
++      const delay = Number.isFinite(retryAfter) && retryAfter > 0
++        ? retryAfter * 1000
++        : Math.min(1000 * 2 ** attempt, BACKOFF_CAP_MS);
++      await sleep(delay);
++      attempt += 1;
++    }
++  }
+ }
+ 
+ function header(message, name) {
+@@ -96,6 +119,7 @@
+       filename: payload.filename,
+       contentType: payload.mimeType,
+       size: payload.body.size,
++      attachmentId: payload.body.attachmentId,
+     });
+   }
+   for (const part of payload?.parts || []) listAttachments(part, out);
+@@ -119,6 +143,24 @@
+   };
+ }
+ 
++// Fetch one attachment's bytes and save them to destDir on the server host.
++// messageId + attachmentId come from readMessage's attachments[] (attachmentId
++// added above). Read-only Gmail scope — this only downloads, never mutates mail.
++export async function downloadAttachment(account, messageId, attachmentId, filename, destDir) {
++  const client = getClient(account);
++  const att = await api(
++    client,
++    `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`
++  );
++  const buf = Buffer.from(String(att.data).replace(/-/g, "+").replace(/_/g, "/"), "base64");
++  const dir = (destDir || ".").replace(/^~(?=$|\/)/, os.homedir());
++  const safe = (filename || attachmentId).replace(/[^\w.\-]/g, "_");
++  fs.mkdirSync(dir, { recursive: true });
++  const out = path.join(dir, safe);
++  fs.writeFileSync(out, buf);
++  return { account: account.id, saved: out, filename: safe, size: buf.length };
++}
++
+ // Used by check.js — cheap authenticated call proving the token works.
+ export async function checkAccount(account) {
+   const client = getClient(account);

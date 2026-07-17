@@ -1,0 +1,16 @@
+[Unit]
+Description=aureon-agent — weekly invoice auto-downloader (Engine A)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/radxa/dev-shared/projects/aureon-agent
+# --incremental: first run scans newer_than:90d and writes .cron-state.json;
+# every later run scans newer_than:7d. .seen.json makes it idempotent, so a
+# generous window never re-downloads. Flat API cost after the first backfill.
+ExecStart=/home/radxa/dev-shared/projects/aureon-agent/.venv/bin/python invoice_pilot.py --incremental
+StandardOutput=journal
+StandardError=journal
+
+# Read-only Gmail scope; secrets come from .env + tokens/ (gitignored).
