@@ -480,7 +480,6 @@ class AgentRuntime:
 
     async def _cron_list(self) -> str:
         """List all cron jobs."""
-        import time
         import aiosqlite
         from datetime import datetime
 
@@ -537,7 +536,7 @@ class AgentRuntime:
         """Resume a paused cron job."""
         import time
         import aiosqlite
-        from aureon_agent.cron_schedule import detect_schedule_type, calc_next_run
+        from aureon_agent.cron_schedule import calc_next_run
 
         if not job_id:
             return "Error: job_id required"

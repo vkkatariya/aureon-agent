@@ -1,8 +1,7 @@
-from .base import SubagentBackend
 from .sandbox import Sandbox
-from .task import SubagentTask, SubagentResult
+from .task import SubagentTask
 from .claude_code import ClaudeCodeBackend
-from .log import log_subagent_dispatch, get_recent_subagent_logs
+from .log import log_subagent_dispatch
 import os
 import uuid
 from aureon_agent.tools.log import log_tool_usage
@@ -20,8 +19,8 @@ async def delegate_task_tool(context: dict, description: str, backend: str = "cl
     if backend not in BACKENDS:
         return f"Error: Unknown backend '{backend}'. Available: {list(BACKENDS.keys())}"
         
-    router = context.get("router")
-    session_id = context.get("session_id")
+    context.get("router")
+    context.get("session_id")
     
     # Cost control estimation - normally we would count tokens here. 
     # For now, we will do a rough heuristic based on file sizes or just word count.

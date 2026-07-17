@@ -8,7 +8,7 @@ Supports three schedule types:
 import logging
 import random
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

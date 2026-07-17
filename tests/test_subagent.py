@@ -1,8 +1,5 @@
 import os
-import pytest
-from aureon_agent.subagent.task import SubagentTask
 from aureon_agent.subagent.sandbox import Sandbox
-from aureon_agent.subagent.claude_code import ClaudeCodeBackend
 
 def test_subagent_sandbox(tmp_path):
     # Setup test workspace

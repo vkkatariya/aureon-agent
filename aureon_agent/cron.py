@@ -4,12 +4,11 @@ Ticks every 60s, checks for due jobs, spawns isolated agent runs,
 delivers output to the configured channel.
 """
 import asyncio
-import json
 import logging
 import time
 
 from aureon_agent.cron_db import CronDB
-from aureon_agent.cron_schedule import calc_next_run, detect_schedule_type
+from aureon_agent.cron_schedule import calc_next_run
 
 logger = logging.getLogger(__name__)
 

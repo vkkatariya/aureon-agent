@@ -140,8 +140,6 @@ def make_banner() -> str:
     pixel = 12
     gap = 1
     text = "AUREON-AGENT"
-    color_main = "#FF8A2B"  # warm orange
-    color_glow = "#FFB347"  # lighter highlight for drop shadow
     #    color_dark = "#1A1A1A"  # bg
 
     main_w = 12 * (5 * len(text) + (len(text) - 1) * 1) - 1

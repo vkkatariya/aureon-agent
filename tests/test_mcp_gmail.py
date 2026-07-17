@@ -4,8 +4,6 @@ Tests cover:
   - Gmail MCP configuration block parsing
   - Gmail token fallback logic
 """
-import asyncio
-import json
 import os
 import sys
 import unittest
@@ -13,7 +11,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aureon_agent.mcp_client import MCPClient, MCPManager
 
 class TestGmailCliConfig(unittest.TestCase):
     """Test the Gmail configuration block in _parse_mcp_servers."""

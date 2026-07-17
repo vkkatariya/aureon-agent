@@ -1,6 +1,5 @@
 import os
-import pytest
-from plan_node import require_plan, count_features, plan_node_blocks_total
+from plan_node import require_plan, count_features
 
 def test_count_features():
     # Scenario 1: 3 imperative verbs -> 3

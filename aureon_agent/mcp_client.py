@@ -6,7 +6,6 @@ handles the full lifecycle: connect → list_tools → call_tool → disconnect.
 Tool schemas are translated from MCP format (inputSchema) to OpenAI function
 format (parameters) so they merge seamlessly with skill_loader tools.
 """
-import asyncio
 import json
 import logging
 import os

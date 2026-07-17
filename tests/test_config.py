@@ -1,8 +1,7 @@
 import os
 import tempfile
-import pytest
 
-from aureon_agent.config import AureonConfig, get_chat_id_from_update
+from aureon_agent.config import AureonConfig
 
 def test_config_roundtrip():
     with tempfile.TemporaryDirectory() as tmp:

@@ -9,7 +9,7 @@ import sys
 from dotenv import load_dotenv
 
 from agent_runtime import AgentRuntime
-from aureon_agent.pidlock import acquire_lock, install_signal_handlers, release_lock
+from aureon_agent.pidlock import acquire_lock, release_lock
 from channels.discord import DiscordChannel
 from channels.router import ChannelRouter
 from channels.telegram import TelegramChannel
@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("aureon-agent")
 
-import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -90,8 +89,10 @@ def _parse_mcp_servers() -> list[dict]:
             for line in f:
                 if "=" in line:
                     k, v = line.strip().split("=", 1)
-                    if k == "GOOGLE_OAUTH_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
-                    if k == "GOOGLE_OAUTH_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+                    if k == "GOOGLE_OAUTH_CLIENT_ID" and not gmail_client_id:
+                        gmail_client_id = v
+                    if k == "GOOGLE_OAUTH_CLIENT_SECRET" and not gmail_client_secret:
+                        gmail_client_secret = v
 
     if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(

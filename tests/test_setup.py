@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from aureon_agent.setup import run_setup
 from aureon_agent.config import AureonConfig
 import argparse
