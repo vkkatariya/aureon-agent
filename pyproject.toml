@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aureon-agent"
-version = "0.4.0"
+version = "0.5.0"
 description = "Personal AI agent with Ollama local + cloud fallback, doctrine-aware startup, and multi-channel (Telegram + Discord) support"
 readme = "README.md"
 requires-python = ">=3.12"
