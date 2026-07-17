@@ -1,5 +1,4 @@
 import os
-import pytest
 from aureon_agent.tools.todo import TodoTool
 from aureon_agent.tools.base import WorkspaceBoundTool
 
@@ -8,10 +7,10 @@ def test_todo_tool_validation():
     rw_dir = WorkspaceBoundTool.ALLOWED_RW
     ro_dir = WorkspaceBoundTool.ALLOWED_RO
     
-    assert TodoTool._validate_todo_path(os.path.join(rw_dir, "test.md"))[0] == True
-    assert TodoTool._validate_todo_path(os.path.join(rw_dir, "test.txt"))[0] == False
-    assert TodoTool._validate_todo_path(os.path.join(ro_dir, "test.md"))[0] == False
-    assert TodoTool._validate_todo_path("/tmp/test.md")[0] == False
+    assert TodoTool._validate_todo_path(os.path.join(rw_dir, "test.md"))[0]
+    assert not TodoTool._validate_todo_path(os.path.join(rw_dir, "test.txt"))[0]
+    assert not TodoTool._validate_todo_path(os.path.join(ro_dir, "test.md"))[0]
+    assert not TodoTool._validate_todo_path("/tmp/test.md")[0]
 
 def test_todo_tool_methods(tmp_path):
     # Mock ALLOWED_RW to be tmp_path for test

@@ -137,13 +137,13 @@ class ToolRegistry:
         if backend == "mcp":
             if self.mcp_manager:
                 return await self.mcp_manager.call_tool(name, args)
-            return json.dumps({"error": f"MCP manager not configured"})
+            return json.dumps({"error": "MCP manager not configured"})
 
         if backend == "skill":
             if self.skill_loader:
                 result = await self.skill_loader.execute_tool(name, args, context)
                 return json.dumps(result, default=str) if isinstance(result, dict) else str(result)
-            return json.dumps({"error": f"Skill loader not configured"})
+            return json.dumps({"error": "Skill loader not configured"})
 
         return json.dumps({"error": f"Unknown tool: {name}"})
 

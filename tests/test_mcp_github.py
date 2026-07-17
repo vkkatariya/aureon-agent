@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aureon_agent.mcp_client import MCPClient, MCPManager, MCPConfigError
+from aureon_agent.mcp_client import MCPClient
 
 
 class TestGitHubMCPClient(unittest.TestCase):

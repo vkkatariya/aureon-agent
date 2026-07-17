@@ -170,7 +170,6 @@ def check_cron_scheduler() -> Tuple[str, str]:
         return "❌", f"DB error: {e}"
 
 def check_mcp_servers() -> Tuple[str, str]:
-    import shutil
     servers = []
     # Check Notion — must match cli.py logic exactly
     # Reads NOTION_API_KEY (hermes-style) OR NOTION_TOKEN (fallback),
@@ -198,8 +197,10 @@ def check_mcp_servers() -> Tuple[str, str]:
             for line in f:
                 if "=" in line:
                     k, v = line.strip().split("=", 1)
-                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
-                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id:
+                        gmail_client_id = v
+                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret:
+                        gmail_client_secret = v
 
     if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(

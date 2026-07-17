@@ -17,12 +17,11 @@ def cmd_mcp_list(args):
 
 
 async def _cmd_mcp_list_async():
-    import os
     from dotenv import load_dotenv
     load_dotenv(override=True)
 
     from aureon_agent.cli import _parse_mcp_servers
-    from aureon_agent.mcp_client import MCPManager, MCPConfigError
+    from aureon_agent.mcp_client import MCPManager
     from rich.console import Console
     from rich.table import Table
 
@@ -182,27 +181,27 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
     
     # setup
-    p_setup = subparsers.add_parser("setup", help="Interactive setup wizard")
+    subparsers.add_parser("setup", help="Interactive setup wizard")
     # Because setup has its own arguments, we parse known args or just delegate.
     # We will delegate the full sys.argv to setup.main later if chosen.
     
     # postinstall
-    p_postinstall = subparsers.add_parser("postinstall", help="Bootstrap dependencies")
+    subparsers.add_parser("postinstall", help="Bootstrap dependencies")
     
     # doctor
-    p_doctor = subparsers.add_parser("doctor", help="Health checks")
+    subparsers.add_parser("doctor", help="Health checks")
     
     # start
-    p_start = subparsers.add_parser("start", help="Run the agent in foreground (default)")
+    subparsers.add_parser("start", help="Run the agent in foreground (default)")
     
     # stop
-    p_stop = subparsers.add_parser("stop", help="Stop the systemd service")
+    subparsers.add_parser("stop", help="Stop the systemd service")
     
     # status
-    p_status = subparsers.add_parser("status", help="Check systemd service status")
+    subparsers.add_parser("status", help="Check systemd service status")
     
     # logs
-    p_logs = subparsers.add_parser("logs", help="Tail systemd logs")
+    subparsers.add_parser("logs", help="Tail systemd logs")
     
     # tool-log
     p_tool_log = subparsers.add_parser("tool-log", help="Show tool usage audit log")
@@ -225,7 +224,7 @@ def main():
     mcp_sub.add_parser("list", help="List configured MCP servers and their tools")
     
     # version
-    p_version = subparsers.add_parser("version", help="Print version")
+    subparsers.add_parser("version", help="Print version")
     
     # If no args provided, default to 'start'
     if len(sys.argv) == 1:

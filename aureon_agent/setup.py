@@ -4,7 +4,6 @@ import logging
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from aureon_agent.config import AureonConfig, get_chat_id_from_update
 from aureon_agent.tui import (
@@ -13,13 +12,9 @@ from aureon_agent.tui import (
     print_status,
     confirm,
     select,
-    checkbox,
     text,
     password,
-    path,
-    print_table,
     spinner,
-    progress,
 )
 
 logger = logging.getLogger("aureon-agent.setup")
@@ -288,12 +283,18 @@ def run_setup(args):
     
     if args.non_interactive:
         # Override config with cli args
-        if args.telegram_bot_token: config.TELEGRAM_BOT_TOKEN = args.telegram_bot_token
-        if args.telegram_allowed_chats: config.TELEGRAM_ALLOWED_CHATS = args.telegram_allowed_chats
-        if args.discord_bot_token: config.DISCORD_BOT_TOKEN = args.discord_bot_token
-        if args.ollama_base_url: config.OLLAMA_BASE_URL = args.ollama_base_url
-        if args.ollama_api_key: config.OLLAMA_API_KEY = args.ollama_api_key
-        if args.ollama_model: config.OLLAMA_MODEL = args.ollama_model
+        if args.telegram_bot_token:
+            config.TELEGRAM_BOT_TOKEN = args.telegram_bot_token
+        if args.telegram_allowed_chats:
+            config.TELEGRAM_ALLOWED_CHATS = args.telegram_allowed_chats
+        if args.discord_bot_token:
+            config.DISCORD_BOT_TOKEN = args.discord_bot_token
+        if args.ollama_base_url:
+            config.OLLAMA_BASE_URL = args.ollama_base_url
+        if args.ollama_api_key:
+            config.OLLAMA_API_KEY = args.ollama_api_key
+        if args.ollama_model:
+            config.OLLAMA_MODEL = args.ollama_model
     
     sections = [s.strip() for s in args.section.split(',')]
     all_sections = "all" in sections
