@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     branches: [main, dev]
@@ -11,11 +12,14 @@ on:
     paths:
       - '**/*.py'
       - 'requirements*.txt'
+
+permissions:
+  contents: read
+
 jobs:
   lint-test:
-    name: Lint · Test (smoke + agent loop)
+    name: Lint and Test
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('requirements.txt') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -33,14 +37,7 @@ jobs:
           . .venv/bin/activate
           pip install ruff
           ruff check . --exclude .venv --exclude references
-        continue-on-error: true
-      - name: Smoke test
+      - name: Pytest
         run: |
           . .venv/bin/activate
-          python tests/smoke.py
-        continue-on-error: true
-      - name: Agent loop test
-        run: |
-          . .venv/bin/activate
-          python tests/test_agent_loop.py
-        continue-on-error: true
+          python -m pytest tests/ -q
