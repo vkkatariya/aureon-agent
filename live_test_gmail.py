@@ -32,19 +32,39 @@ async def main():
     )
     
     mcp_manager = MCPManager()
-    gmail_email = os.getenv("EMAIL_ADDRESS")
-    gmail_password = os.getenv("EMAIL_PASSWORD")
-    if not gmail_email or not gmail_password:
-        print("No Gmail credentials found. Skipping live test.")
+    gmail_client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    gmail_client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    
+    oauth_file = os.path.join(os.path.dirname(__file__), "tokens", ".oauth")
+    if os.path.exists(oauth_file):
+        with open(oauth_file, "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    if k == "GOOGLE_OAUTH_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
+                    if k == "GOOGLE_OAUTH_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+
+    if not gmail_client_id or not gmail_client_secret:
+        print("No Gmail OAuth credentials found. Skipping live test.")
         return
 
-    gmail_bin = os.path.expanduser("~/.npm-global/lib/node_modules/gmail-mcp-imap/build/index.js")
+    gmail_bin = os.path.expanduser("~/.npm-global/lib/node_modules/multi-email-mcp/src/server.js")
+    token_path = os.path.join(os.path.dirname(__file__), "tokens", "vishal.json")
+    if not os.path.exists(token_path):
+        print("No Gmail OAuth token cached (run 'npm run auth vishal'). Skipping live test.")
+        return
     
     ok = await mcp_manager.add_server(
         server_name="gmail",
         command="node",
         args=[gmail_bin],
-        env={"GMAIL_EMAIL": gmail_email, "GMAIL_APP_PASSWORD": gmail_password}
+        env={
+            "MAIL_ACCOUNTS": "vishal",
+            "MAIL_VISHAL_PROVIDER": "gmail-api",
+            "MAIL_VISHAL_EMAIL": os.environ.get("EMAIL_ADDRESS") or "vishal@example.com",
+            "GOOGLE_OAUTH_CLIENT_ID": gmail_client_id,
+            "GOOGLE_OAUTH_CLIENT_SECRET": gmail_client_secret,
+        }
     )
     
     if ok:

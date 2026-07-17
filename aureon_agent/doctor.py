@@ -189,13 +189,24 @@ def check_mcp_servers() -> Tuple[str, str]:
         )
         servers.append(("github", os.path.exists(github_bin)))
     # Check Gmail
-    gmail_email = os.environ.get("EMAIL_ADDRESS")
-    gmail_password = os.environ.get("EMAIL_PASSWORD")
-    if gmail_email and gmail_password:
+    gmail_client_id = os.environ.get("GMAIL_API_CLIENT_ID")
+    gmail_client_secret = os.environ.get("GMAIL_API_CLIENT_SECRET")
+    
+    oauth_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", ".oauth")
+    if os.path.exists(oauth_file):
+        with open(oauth_file, "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
+                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+
+    if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(
-            "~/.npm-global/lib/node_modules/gmail-mcp-imap/build/index.js"
+            "~/.npm-global/lib/node_modules/multi-email-mcp/src/server.js"
         )
-        servers.append(("gmail", os.path.exists(gmail_bin)))
+        token_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", "vishal.json")
+        servers.append(("gmail", os.path.exists(gmail_bin) and os.path.exists(token_path)))
     if not servers:
         return "🟡", "No MCP servers configured (skills-only mode)"
     missing = [name for name, found in servers if not found]

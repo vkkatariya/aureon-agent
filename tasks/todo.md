@@ -210,12 +210,15 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 **Note:** Phase 7.1 was originally marked done by the coding agent but the actual Notion server was never installed/configured until this session. The foundation (mcp_client.py, tool_registry.py) shipped earlier; the live server integration is what closed it out.
 
 
-**Sub-task 17: Gmail MCP server (Phase 7.3)** ✅
-- [x] `gmail-mcp-server` (community) or roll our own
-- [x] OAuth dance: credentials in `~/.openclaw/.env` (chmod 600), refresh token handled by server (Uses App Password instead)
-- [x] Deploy as **HTTP/SSE on athena** (Tailscale-only, port 127.0.0.1:N) — shared across agents (Uses stdio with App Password)
-- [x] aureon-agent connects via HTTP, not stdio (Uses stdio)
-- [x] Test: list inbox, search, send (with explicit confirmation per channel-policy-spec)
+**Sub-task 17: Gmail MCP server (Phase 7.3) ✅ — OAuth, NOT plaintext**
+- [x] **Rejected plaintext IMAP** (`gmail-mcp-imap` + `mcp-server-gmail` app-password model) — Captain: "storing gmail password in plaintext is risky." Both stray pkgs UNINSTALLED.
+- [x] **Package: `oliverkoast/multi-email-mcp@0.1.0`** (stdio, maintained). `gmail-api` provider = **OAuth 2.0, `gmail.readonly` scope**. Refresh token cached in `tokens/` (gitignored) — NO mailbox password in `.env`.
+- [x] **Rejected `GongRzhe/Gmail-MCP-Server`** (Captain's suggestion) — **ARCHIVED/read-only since 2026-03**. Dead dep.
+- [x] **Rejected Google Official Gmail MCP** — hosted/Cloud-Run remote endpoint, not stdio-on-athena. Heavier.
+- [x] **Headless OAuth fix:** `auth.js` bound `127.0.0.1:<ephemeral>` → Google rejected ("doesn't comply with OAuth 2.0 policy"). Patched to **`localhost:32807` (fixed port)** so Google auto-approves loopback. Registered `http://localhost:32807` in Google Cloud OAuth client (External type + test user added).
+- [x] **Token obtained:** `ssh -L 32807:localhost:32807 athena` tunnel → `npm run auth vishal` on athena → opened consent URL on Mac → Google redirected via tunnel → `tokens/vishal.json` saved on athena (chmod 600).
+- [x] **Client secret:** `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` in aureon-agent's `.env` (chmod 600, gitignored). Required at runtime for token refresh. NOT the mailbox password.
+- [x] **Live test (2026-07-17, this session):** `mcp_gmail_list_recent` → real Gmail API → returned Captain's actual GitHub notification emails (vkkatariya/aureon-agent CI failures). 4 tools: search_mail, read_message, list_recent, list_accounts. End-to-end verified, NOT mocked.
 
 **Sub-task 18: GitHub MCP server (Phase 7.4)** ✅
 - [x] Official `@modelcontextprotocol/server-github` via stdio
