@@ -82,17 +82,6 @@ def _parse_mcp_servers() -> list[dict]:
     # Token cache lives in tokens/ dir, requires 'npm run auth vishal' first.
     gmail_client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
     gmail_client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
-    
-    oauth_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", ".oauth")
-    if os.path.exists(oauth_file):
-        with open(oauth_file, "r") as f:
-            for line in f:
-                if "=" in line:
-                    k, v = line.strip().split("=", 1)
-                    if k == "GOOGLE_OAUTH_CLIENT_ID" and not gmail_client_id:
-                        gmail_client_id = v
-                    if k == "GOOGLE_OAUTH_CLIENT_SECRET" and not gmail_client_secret:
-                        gmail_client_secret = v
 
     if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(
