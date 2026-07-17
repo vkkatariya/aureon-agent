@@ -1,0 +1,34 @@
+--- /home/radxa/.npm-global/lib/node_modules/multi-email-mcp/src/server.js.bak	2026-07-18 00:26:08.324037578 +0200
++++ /home/radxa/.npm-global/lib/node_modules/multi-email-mcp/src/server.js	2026-07-18 00:29:17.540689635 +0200
+@@ -95,6 +95,31 @@
+   async () => json(accounts.map(({ id, email, provider }) => ({ id, email, provider })))
+ );
+ 
++server.registerTool(
++  "download_attachment",
++  {
++    title: "Download attachment",
++    description:
++      "Download one email attachment to a folder on the server host. Use read_message first to get the message's attachments[], each of which now carries an `attachmentId`. Pass that id plus the original `filename`. Returns the saved path and byte size. Gmail (OAuth) accounts only; read-only scope — downloads, never modifies mail.",
++    inputSchema: {
++      account: z.string().describe(`The account the message id belongs to: one of ${accountIds.join(", ")}, or an email address`),
++      messageId: z.string().describe("Message id from search_mail / list_recent"),
++      attachmentId: z.string().describe("attachmentId from read_message's attachments[]"),
++      filename: z.string().describe("Original attachment filename (used to name the saved file)"),
++      destDir: z.string().default("~/dev-shared/docs/invoices").describe("Directory on the server host to save into (default ~/dev-shared/docs/invoices)"),
++    },
++  },
++  async ({ account, messageId, attachmentId, filename, destDir }) => {
++    if (account === "all") throw new Error("download_attachment needs a specific account (ids are per-account).");
++    const [target] = resolveAccounts(accounts, account);
++    const provider = providerFor(target);
++    if (!provider.downloadAttachment) {
++      throw new Error(`account ${target.id} (${target.provider}) has no attachment download support`);
++    }
++    return json(await provider.downloadAttachment(target, messageId, attachmentId, filename, destDir));
++  }
++);
++
+ // Exit when the MCP client disconnects — lingering IMAP sockets would
+ // otherwise keep the process alive after stdin closes.
+ process.stdin.on("end", () => process.exit(0));
