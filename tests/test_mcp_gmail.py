@@ -24,9 +24,9 @@ class TestGmailCliConfig(unittest.TestCase):
         from aureon_agent.cli import _parse_mcp_servers
 
         def getenv_side_effect(key, default=None):
-            if key == "GMAIL_API_CLIENT_ID":
+            if key == "GOOGLE_OAUTH_CLIENT_ID":
                 return "test-client-id"
-            if key == "GMAIL_API_CLIENT_SECRET":
+            if key == "GOOGLE_OAUTH_CLIENT_SECRET":
                 return "test-client-secret"
             return None
             
@@ -51,8 +51,9 @@ class TestGmailCliConfig(unittest.TestCase):
         self.assertEqual(gmail_cfg["command"], "node")
         self.assertTrue(gmail_cfg["args"][0].endswith("server.js"))
         self.assertEqual(gmail_cfg["env"]["MAIL_ACCOUNTS"], "vishal")
-        self.assertEqual(gmail_cfg["env"]["MAIL_vishal_GMAIL_API_CLIENT_ID"], "test-client-id")
-        self.assertEqual(gmail_cfg["env"]["MAIL_vishal_GMAIL_API_CLIENT_SECRET"], "test-client-secret")
+        self.assertEqual(gmail_cfg["env"]["GOOGLE_OAUTH_CLIENT_ID"], "test-client-id")
+        self.assertEqual(gmail_cfg["env"]["GOOGLE_OAUTH_CLIENT_SECRET"], "test-client-secret")
+        self.assertEqual(gmail_cfg["env"]["MAIL_VISHAL_EMAIL"], "vishal@example.com")
 
     @patch("os.getenv")
     @patch("os.path.exists")
@@ -60,9 +61,9 @@ class TestGmailCliConfig(unittest.TestCase):
         from aureon_agent.cli import _parse_mcp_servers
 
         def getenv_side_effect(key, default=None):
-            if key == "GMAIL_API_CLIENT_ID":
+            if key == "GOOGLE_OAUTH_CLIENT_ID":
                 return "test-client-id"
-            if key == "GMAIL_API_CLIENT_SECRET":
+            if key == "GOOGLE_OAUTH_CLIENT_SECRET":
                 return "test-client-secret"
             return None
             

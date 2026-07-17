@@ -81,8 +81,8 @@ def _parse_mcp_servers() -> list[dict]:
     # Gmail MCP server (stdio) — Phase 7.3.2 (OAuth)
     # Uses oliverkoast/multi-email-mcp (gmail.readonly).
     # Token cache lives in tokens/ dir, requires 'npm run auth vishal' first.
-    gmail_client_id = os.getenv("GMAIL_API_CLIENT_ID")
-    gmail_client_secret = os.getenv("GMAIL_API_CLIENT_SECRET")
+    gmail_client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID")
+    gmail_client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET")
     
     oauth_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", ".oauth")
     if os.path.exists(oauth_file):
@@ -90,8 +90,8 @@ def _parse_mcp_servers() -> list[dict]:
             for line in f:
                 if "=" in line:
                     k, v = line.strip().split("=", 1)
-                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
-                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+                    if k == "GOOGLE_OAUTH_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
+                    if k == "GOOGLE_OAUTH_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
 
     if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(
@@ -110,9 +110,10 @@ def _parse_mcp_servers() -> list[dict]:
                     "args": [gmail_bin],
                     "env": {
                         "MAIL_ACCOUNTS": "vishal",
-                        "MAIL_vishal_PROVIDER": "gmail-api",
-                        "MAIL_vishal_GMAIL_API_CLIENT_ID": gmail_client_id,
-                        "MAIL_vishal_GMAIL_API_CLIENT_SECRET": gmail_client_secret,
+                        "MAIL_VISHAL_PROVIDER": "gmail-api",
+                        "MAIL_VISHAL_EMAIL": os.environ.get("EMAIL_ADDRESS") or "vishal@example.com",
+                        "GOOGLE_OAUTH_CLIENT_ID": gmail_client_id,
+                        "GOOGLE_OAUTH_CLIENT_SECRET": gmail_client_secret,
                     },
                 })
 
