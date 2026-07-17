@@ -59,9 +59,9 @@ Prototype: search Gmail → recognize invoices → download attachments → save
 
 - [x] Engine A — `invoice_pilot.py` standalone workflow: OAuth refresh-token, search-first query, throttled batches (50/6s) + 429 backoff + `.seen.json` checkpoint, `--dry-run/--before/--after/--incremental/--strict`. `requirements-invoice.txt`. 19 tests.
 - [x] Engine B — MCP patch: `attachmentId` surfaced + `downloadAttachment()` + `api()` 429 backoff in `multi-email-mcp`; `download_attachment` tool registered. Captured in `mcp-patches/` (patches + `apply.sh` + README). Node smoke `tests/mcp_gmail_download.test.mjs` + `live_test_gmail_download.py`.
-- [x] Engine C — `systemd/aureon-invoice.{service,timer}` (Mon 09:00, `--incremental`). **Deviates from D7** (aureon cron runs agent-turn prompts, not shell; systemd timer is the right tool — see DEVLOG).
-- [x] Live-verified (L-081): Engine A downloaded 2 real `%PDF` invoices + idempotent re-run; Engine B downloaded a real `%PDF` via MCP (byte-identical); Engine C window flip 90d→7d. `pytest` 96 pass, ruff clean.
-- [ ] Optional: live Telegram round-trip of Engine B (needs bot restart to load the patched tool).
+- [x] Engine C — **both variants** (Captain's call): (1) `systemd/aureon-invoice.{service,timer}` (Mon 09:00, `--incremental`, deterministic + dedup); (2) aureon agent-scheduler cron job `invoice-weekly` (`0 9 * * 1`) driving the Engine B MCP tools per agent turn — seed `scripts/seed-invoice-cron.sh`.
+- [x] Live-verified (L-081): Engine A 2 real `%PDF` + idempotent re-run; Engine B real `%PDF` via MCP (byte-identical); C-systemd window flip 90d→7d; C-agent ran the job prompt through a real agent turn → chained search→read→download → saved a real `%PDF`. `pytest` 97 pass, ruff clean.
+- [ ] **Captain action:** restart the bot to load the patched `download_attachment` into its running MCP subprocess (else the Mon 09:00 job + live Telegram requests 404 the tool).
 
 ## Phase 9: Cron Scheduler ✅
 
