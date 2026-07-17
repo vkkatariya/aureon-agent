@@ -182,10 +182,20 @@ def check_mcp_servers() -> Tuple[str, str]:
         )
         servers.append(("notion", os.path.exists(notion_bin)))
     # Check GitHub
-    github_token = os.environ.get("GITHUB_MCP_TOKEN")
+    github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GITHUB_MCP_TOKEN")
     if github_token:
-        binary = shutil.which("npx")
-        servers.append(("github", bool(binary)))
+        github_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/@modelcontextprotocol/server-github/dist/index.js"
+        )
+        servers.append(("github", os.path.exists(github_bin)))
+    # Check Gmail
+    gmail_email = os.environ.get("EMAIL_ADDRESS")
+    gmail_password = os.environ.get("EMAIL_PASSWORD")
+    if gmail_email and gmail_password:
+        gmail_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/gmail-mcp-imap/build/index.js"
+        )
+        servers.append(("gmail", os.path.exists(gmail_bin)))
     if not servers:
         return "🟡", "No MCP servers configured (skills-only mode)"
     missing = [name for name, found in servers if not found]

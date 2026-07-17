@@ -61,15 +61,44 @@ def _parse_mcp_servers() -> list[dict]:
                 "env": {"NOTION_TOKEN": notion_token},
             })
 
-    # GitHub MCP server (stdio) — Phase 7.4, disabled by default
-    github_token = os.getenv("GITHUB_MCP_TOKEN")
+    # GitHub MCP server (stdio) — Phase 7.4
+    # Reads GITHUB_TOKEN (hermes-style) or GITHUB_MCP_TOKEN (fallback).
+    github_token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_MCP_TOKEN")
     if github_token:
-        servers.append({
-            "server_name": "github",
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-github"],
-            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
-        })
+        github_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/@modelcontextprotocol/server-github/dist/index.js"
+        )
+        if not os.path.exists(github_bin):
+            logger.warning("GitHub MCP binary not found at %s", github_bin)
+        else:
+            servers.append({
+                "server_name": "github",
+                "command": "node",
+                "args": [github_bin],
+                "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
+            })
+
+    # Gmail MCP server (stdio) — Phase 7.3
+    # Uses gmail-mcp-imap (community package, IMAP/SMTP, no OAuth).
+    # Reads EMAIL_ADDRESS and EMAIL_PASSWORD (hermes-style).
+    gmail_email = os.getenv("EMAIL_ADDRESS")
+    gmail_password = os.getenv("EMAIL_PASSWORD")
+    if gmail_email and gmail_password:
+        gmail_bin = os.path.expanduser(
+            "~/.npm-global/lib/node_modules/gmail-mcp-imap/build/index.js"
+        )
+        if not os.path.exists(gmail_bin):
+            logger.warning("Gmail MCP binary not found at %s", gmail_bin)
+        else:
+            servers.append({
+                "server_name": "gmail",
+                "command": "node",
+                "args": [gmail_bin],
+                "env": {
+                    "GMAIL_EMAIL": gmail_email,
+                    "GMAIL_APP_PASSWORD": gmail_password,
+                },
+            })
 
     return servers
 

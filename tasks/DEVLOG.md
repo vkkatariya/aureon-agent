@@ -253,3 +253,27 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 **Decided:** Public GitHub repo (open-source from day 1). `main` + `dev` branch model per skill. Reuse existing AGENTS.md/CONTEXT.md/README.md from prior bootstrap (don't regenerate — per skill partial-setup rules).
 **Next:** Phase 1 sub-tasks 1-2 from tasks/kickoff-aureon-agent.md (workspace symlinks + bootstrap already done, so jump to sub-task 3: SQLite Memory + SessionManager).
 **Modified:** tasks/DEVLOG.md, tasks/todo.md, tasks/lessons.md, .github/workflows/ci.yml, .git/ (init), origin/main (push), origin/dev (push)
+
+## 2026-07-17 — Phase 7.3: GitHub MCP + Gmail MCP (live)
+
+**Branch**: `feat/aureon-agent-phase7-mcp-servers` (off `dev`)
+
+**GitHub MCP:**
+- Installed `@modelcontextprotocol/server-github` via npm.
+- Wired `aureon_agent/cli.py` to use `node` with the absolute path to the binary (`~/.npm-global/lib/node_modules/@modelcontextprotocol/server-github/dist/index.js`).
+- Fixed token fallback to read `GITHUB_TOKEN` or `GITHUB_MCP_TOKEN`.
+- Tested live: Successfully retrieved open PRs for `vkkatariya/aureon-agent`.
+- Added `test_mcp_github.py` with mock tests verifying the configuration and token logic.
+
+**Gmail MCP:**
+- Investigated `gmail-mcp-server` (community) vs roll-our-own.
+- Found that `mcp-server-gmail` requires OAuth2 (which would need HTTP/SSE and Captain sign-off per spec).
+- Selected `gmail-mcp-imap` instead, as it provides IMAP/SMTP capabilities through App Passwords (stdio + token-based), avoiding OAuth completely and fulfilling the "Recommend community if stdio + token-based (no OAuth)" criteria.
+- Wired `cli.py` to use `gmail-mcp-imap` with `EMAIL_ADDRESS` and `EMAIL_PASSWORD` from `.env`.
+- Added `test_mcp_gmail.py` and a `live_test_gmail.py` verification script (graceful skip if credentials missing).
+
+**Tests:**
+- 77/77 tests passing (satisfies 70+ criteria).
+- `doctor.py` successfully reflects both `github` and `gmail` configuration checks.
+- Marked Sub-tasks 17 & 18 as done in `todo.md`.
+

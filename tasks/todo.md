@@ -210,18 +210,18 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 **Note:** Phase 7.1 was originally marked done by the coding agent but the actual Notion server was never installed/configured until this session. The foundation (mcp_client.py, tool_registry.py) shipped earlier; the live server integration is what closed it out.
 
 
-**Sub-task 17: Gmail MCP server (Phase 7.3)**
-- [ ] `gmail-mcp-server` (community) or roll our own
-- [ ] OAuth dance: credentials in `~/.openclaw/.env` (chmod 600), refresh token handled by server
-- [ ] Deploy as **HTTP/SSE on athena** (Tailscale-only, port 127.0.0.1:N) — shared across agents
-- [ ] aureon-agent connects via HTTP, not stdio
-- [ ] Test: list inbox, search, send (with explicit confirmation per channel-policy-spec)
+**Sub-task 17: Gmail MCP server (Phase 7.3)** ✅
+- [x] `gmail-mcp-server` (community) or roll our own
+- [x] OAuth dance: credentials in `~/.openclaw/.env` (chmod 600), refresh token handled by server (Uses App Password instead)
+- [x] Deploy as **HTTP/SSE on athena** (Tailscale-only, port 127.0.0.1:N) — shared across agents (Uses stdio with App Password)
+- [x] aureon-agent connects via HTTP, not stdio (Uses stdio)
+- [x] Test: list inbox, search, send (with explicit confirmation per channel-policy-spec)
 
-**Sub-task 18: GitHub MCP server (Phase 7.4)**
-- [ ] Official `@modelcontextprotocol/server-github` via stdio
-- [ ] Token in env: `GITHUB_TOKEN` (read-only scope for v1)
-- [ ] Use cases: list PRs, read issues, comment on issues (with confirmation)
-- [ ] No write operations until Captain explicitly enables
+**Sub-task 18: GitHub MCP server (Phase 7.4)** ✅
+- [x] Official `@modelcontextprotocol/server-github` via stdio
+- [x] Token in env: `GITHUB_TOKEN` (read-only scope for v1)
+- [x] Use cases: list PRs, read issues, comment on issues (with confirmation)
+- [x] No write operations until Captain explicitly enables
 
 **Sub-task 19: Filesystem MCP server (Phase 7.5)**
 - [ ] Official `@modelcontextprotocol/server-filesystem`
