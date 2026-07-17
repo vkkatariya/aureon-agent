@@ -1,7 +1,28 @@
 # Dev Log
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
---
+---
+
+## 2026-07-18 — Invoice auto-downloader prototype (local session, branch `feat/invoice-pilot`)
+**Did:** Built the interview-task prototype: search a Gmail inbox, recognize invoices, download attachments to a folder. Two engines on one OAuth base + a weekly scheduler. All three live-verified against the real inbox (~6500 emails).
+**Built:**
+- **Engine A — `invoice_pilot.py` (standalone workflow):** OAuth refresh-token → `google-api-python-client`, no agent/MCP dependency. Search-first query (`subject:(invoice OR rechnung OR facture) has:attachment`), throttled batches (50/batch, 6s sleep → ~5000 u/min under the 6000 cap), 429/5xx exponential backoff honouring `Retry-After` (cap 30s), `.seen.json` checkpoint written every batch (crash-safe + idempotent), `--dry-run`, `--before/--after` time-split (D2), `--incremental` weekly window (90d first run → 7d after, via `.cron-state.json`), `--strict` filename gate. `requirements-invoice.txt` (kept out of the main agent deps).
+- **Engine B — MCP patch (agent-driven):** patched `multi-email-mcp` `gmail-api.js` (surface `attachmentId` in `readMessage`; new `downloadAttachment()`; **added 429 backoff to the `api()` helper — the server had none**) + `server.js` (register `download_attachment` tool). Lives in global node_modules, so captured in-repo as `mcp-patches/{gmail-api.js,server.js}.patch` + `apply.sh` (idempotent, round-trip-verified) + README.
+- **Engine C — weekly scheduler:** `systemd/aureon-invoice.{service,timer}` (oneshot, Mon 09:00, `Persistent=true`) running `invoice_pilot.py --incremental`.
+- Tests: `tests/test_invoice_pilot.py` (19 cases — heuristics, filename/collision, checkpoint, 429 backoff, list ordering, full-run dedup/throttle/dry-run/incremental; hand-built fake Gmail service, no network) and `tests/mcp_gmail_download.test.mjs` (Node smoke: 429 backoff + base64 write + sanitize + tilde, deterministic). `live_test_gmail_download.py` drives the patched server through aureon's `MCPManager` against real Gmail.
+**Design decisions / deviations from kickoff:**
+- **Filename keyed on the attachment's own name, not the subject (refines D4).** Live dry-run exposed a real bug: one email with 3 attachments produced 3 identical `{date}_{sender}_{subject}.pdf` names → silent overwrite, invoices lost. Now `{date}_{sender}_{attachment-stem}.{ext}` + an on-disk `_1/_2` collision guard.
+- **Invoice recognition = type gate by default, filename-token match behind `--strict` (refines D3).** The invoice-subject *search* already recognizes the email; requiring the *attachment filename* to also contain "invoice/rechnung" is lossy (real invoices are often named `INV-123.pdf`). Default trusts the search and takes every pdf/png/jpg; `--strict` restores the D3 filename gate.
+- **Deliverable C uses a systemd timer, NOT the aureon cron scheduler (deviates from D7).** aureon's `cron.py` runs *agent-turn prompts*, not shell commands, and the agent has no terminal/file tool yet (Phase 6.5 unbuilt); Engine B has no `.seen` dedup, so an agent-turn weekly job would re-download every week. A systemd timer running `invoice_pilot.py --incremental` is the correct tool — Engine A already owns the window logic + dedup. Rationale flagged for Captain to redirect if the agent-scheduler variant is preferred.
+**Verified (live, per L-081):**
+- Engine A: `--dry-run` listed 30 real invoice emails / 28 PDF candidates; real scoped run downloaded 2 valid `%PDF` files (buyZOXS 86KB, OpenAI credit note 75KB) to `~/dev-shared/docs/invoices/`; `.seen.json` written; re-run → 0 downloads, 2 skipped_seen (idempotent). No 429s (search-first keeps volume tiny; backoff unit-tested).
+- Engine B: MCP server starts with the patch, `mcp_gmail_download_attachment` discovered (5 tools), `read_message` surfaces `attachmentId`, `download_attachment` wrote a real 75KB `%PDF` (byte-identical to Engine A's OpenAI invoice — cross-validates both engines). `tokens/vishal.json` intact.
+- Engine C: `systemd-analyze verify` clean; `--incremental` window flips 90d (first run, writes state) → 7d (state present).
+- Regression: `pytest tests/` 96 passed; node smoke passes; `ruff` clean on all new Python. Secrets confirmed gitignored (`.env`, `tokens/*`), downloaded invoices live outside the repo.
+**Next:** PR to `dev`. Optional: live Telegram round-trip of Engine B (send "download my recent invoices" and watch the agent chain search→read→download); requires a bot restart to load the patched MCP tool.
+**Modified/new:** `invoice_pilot.py`, `requirements-invoice.txt`, `tests/test_invoice_pilot.py`, `tests/mcp_gmail_download.test.mjs`, `live_test_gmail_download.py`, `mcp-patches/` (2 patches + apply.sh + README), `systemd/aureon-invoice.{service,timer}`, `tasks/DEVLOG.md` (this entry), `tasks/todo.md`.
+
+---
 ## 2026-07-17 — Phase 7.3 Gmail OAuth (Option B) + GitHub live
 
 **Gmail: from plaintext IMAP → OAuth (Captain's call: "storing gmail password in plaintext is risky").**

@@ -53,6 +53,16 @@
 - [ ] Webhook mode for Telegram (replace polling)
 - [ ] Server/group channel support
 
+## Invoice auto-downloader (interview task, branch `feat/invoice-pilot`) ✅ (PR pending)
+
+Prototype: search Gmail → recognize invoices → download attachments → save to a folder. Two engines on one OAuth base + weekly scheduler. Full spec: `tasks/kickoff-invoice-pilot.md`.
+
+- [x] Engine A — `invoice_pilot.py` standalone workflow: OAuth refresh-token, search-first query, throttled batches (50/6s) + 429 backoff + `.seen.json` checkpoint, `--dry-run/--before/--after/--incremental/--strict`. `requirements-invoice.txt`. 19 tests.
+- [x] Engine B — MCP patch: `attachmentId` surfaced + `downloadAttachment()` + `api()` 429 backoff in `multi-email-mcp`; `download_attachment` tool registered. Captured in `mcp-patches/` (patches + `apply.sh` + README). Node smoke `tests/mcp_gmail_download.test.mjs` + `live_test_gmail_download.py`.
+- [x] Engine C — `systemd/aureon-invoice.{service,timer}` (Mon 09:00, `--incremental`). **Deviates from D7** (aureon cron runs agent-turn prompts, not shell; systemd timer is the right tool — see DEVLOG).
+- [x] Live-verified (L-081): Engine A downloaded 2 real `%PDF` invoices + idempotent re-run; Engine B downloaded a real `%PDF` via MCP (byte-identical); Engine C window flip 90d→7d. `pytest` 96 pass, ruff clean.
+- [ ] Optional: live Telegram round-trip of Engine B (needs bot restart to load the patched tool).
+
 ## Phase 9: Cron Scheduler ✅
 
 **Goal:** Add a background cron scheduler to the bot process that runs isolated agent turns on a schedule and delivers output to Telegram/Discord.

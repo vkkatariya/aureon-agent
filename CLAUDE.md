@@ -134,6 +134,27 @@ sqlite3 data/memory.db "SELECT * FROM notes LIMIT 5;"
 rm data/*.db data/*.db-wal data/*.db-shm
 ```
 
+### Invoice auto-downloader (`feat/invoice-pilot`)
+```bash
+# Engine A — standalone Gmail invoice downloader (deps: requirements-invoice.txt)
+pip install -r requirements-invoice.txt
+python invoice_pilot.py --dry-run                 # list candidates, download nothing
+python invoice_pilot.py --after 2026/01/01        # scoped real run
+python invoice_pilot.py --incremental             # weekly window (90d first, 7d after)
+python invoice_pilot.py --strict                  # require invoice token in filename too
+# saves to ~/dev-shared/docs/invoices/ (override: --dir or INVOICE_DIR)
+
+# Engine B — MCP patch (agent-driven download via multi-email-mcp)
+./mcp-patches/apply.sh                             # patch the global MCP server
+node tests/mcp_gmail_download.test.mjs             # deterministic patch smoke (no network)
+python live_test_gmail_download.py                 # live: real Gmail -> real invoice PDF
+
+# Engine C — weekly systemd timer
+cp systemd/aureon-invoice.{service,timer} ~/.config/systemd/user/
+systemctl --user enable --now aureon-invoice.timer
+systemctl --user start aureon-invoice.service      # trigger a run manually
+```
+
 ### Channel testing (after Phase 3)
 ```bash
 # Telegram: check bot token, then send a test message
