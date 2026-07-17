@@ -78,27 +78,43 @@ def _parse_mcp_servers() -> list[dict]:
                 "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": github_token},
             })
 
-    # Gmail MCP server (stdio) — Phase 7.3
-    # Uses gmail-mcp-imap (community package, IMAP/SMTP, no OAuth).
-    # Reads EMAIL_ADDRESS and EMAIL_PASSWORD (hermes-style).
-    gmail_email = os.getenv("EMAIL_ADDRESS")
-    gmail_password = os.getenv("EMAIL_PASSWORD")
-    if gmail_email and gmail_password:
+    # Gmail MCP server (stdio) — Phase 7.3.2 (OAuth)
+    # Uses oliverkoast/multi-email-mcp (gmail.readonly).
+    # Token cache lives in tokens/ dir, requires 'npm run auth vishal' first.
+    gmail_client_id = os.getenv("GMAIL_API_CLIENT_ID")
+    gmail_client_secret = os.getenv("GMAIL_API_CLIENT_SECRET")
+    
+    oauth_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", ".oauth")
+    if os.path.exists(oauth_file):
+        with open(oauth_file, "r") as f:
+            for line in f:
+                if "=" in line:
+                    k, v = line.strip().split("=", 1)
+                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id: gmail_client_id = v
+                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret: gmail_client_secret = v
+
+    if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(
-            "~/.npm-global/lib/node_modules/gmail-mcp-imap/build/index.js"
+            "~/.npm-global/lib/node_modules/multi-email-mcp/src/server.js"
         )
         if not os.path.exists(gmail_bin):
             logger.warning("Gmail MCP binary not found at %s", gmail_bin)
         else:
-            servers.append({
-                "server_name": "gmail",
-                "command": "node",
-                "args": [gmail_bin],
-                "env": {
-                    "GMAIL_EMAIL": gmail_email,
-                    "GMAIL_APP_PASSWORD": gmail_password,
-                },
-            })
+            token_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", "vishal.json")
+            if not os.path.exists(token_path):
+                logger.warning("Gmail OAuth token not found at %s (run 'npm run auth vishal')", token_path)
+            else:
+                servers.append({
+                    "server_name": "gmail",
+                    "command": "node",
+                    "args": [gmail_bin],
+                    "env": {
+                        "MAIL_ACCOUNTS": "vishal",
+                        "MAIL_vishal_PROVIDER": "gmail-api",
+                        "MAIL_vishal_GMAIL_API_CLIENT_ID": gmail_client_id,
+                        "MAIL_vishal_GMAIL_API_CLIENT_SECRET": gmail_client_secret,
+                    },
+                })
 
     return servers
 

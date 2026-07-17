@@ -277,3 +277,25 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 - `doctor.py` successfully reflects both `github` and `gmail` configuration checks.
 - Marked Sub-tasks 17 & 18 as done in `todo.md`.
 
+
+## 2026-07-17 — Phase 7.3.2: Gmail MCP via OAuth (Option B)
+
+**Branch**: `feat/aureon-agent-gmail-oauth` (off `dev`)
+
+**Cleanup (Sub-task 7.3.2.1):**
+- Uninstalled stray packages `gmail-mcp-imap` and `mcp-server-gmail` via `npm uninstall -g`.
+- Removed all IMAP references (`EMAIL_ADDRESS`, `EMAIL_PASSWORD`, `gmail-mcp-imap`) from `aureon_agent/cli.py` and `aureon_agent/doctor.py`.
+- Added `tokens/` to the root `.gitignore`.
+
+**OAuth Setup (Sub-tasks 7.3.2.2 & 7.3.2.5):**
+- Installed `oliverkoast/multi-email-mcp` via `npm install -g`.
+- Wired `aureon_agent/cli.py` and `doctor.py` to use `multi-email-mcp/src/server.js` with `MAIL_ACCOUNTS=vishal` and `gmail-api` provider.
+- Set up a fallback credentials loader so `GMAIL_API_CLIENT_ID` and `GMAIL_API_CLIENT_SECRET` can be loaded from `tokens/.oauth` (preventing plaintext secrets in the repo's `.env`).
+- Modified `live_test_gmail.py` and `tests/test_mcp_gmail.py` to use the new OAuth credentials and executable.
+- Verified all 77/77 `pytest` unit tests pass!
+
+**Headless Auth Process (Pending Sub-tasks 7.3.2.3 & 7.3.2.4):**
+- The GCP OAuth Client ID / Secret must be provisioned and saved in `tokens/.oauth`.
+- Authentication via `npm run auth vishal` (or `node ~/.npm-global/lib/node_modules/multi-email-mcp/src/auth.js vishal`) is pending execution from the Captain.
+- Once authenticated, the cached token will be stored in `tokens/vishal.json`, allowing the `live_test_gmail.py` to test connection successfully against the real Gmail API.
+

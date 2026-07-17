@@ -24,23 +24,35 @@ class TestGmailCliConfig(unittest.TestCase):
         from aureon_agent.cli import _parse_mcp_servers
 
         def getenv_side_effect(key, default=None):
-            if key == "EMAIL_ADDRESS":
-                return "test@gmail.com"
-            if key == "EMAIL_PASSWORD":
-                return "1234abcd5678efgh"
+            if key == "GMAIL_API_CLIENT_ID":
+                return "test-client-id"
+            if key == "GMAIL_API_CLIENT_SECRET":
+                return "test-client-secret"
             return None
             
+        def exists_side_effect(path):
+            if "notion" in str(path) or "github" in str(path):
+                return False
+            if "multi-email-mcp" in str(path):
+                return True
+            if "vishal.json" in str(path):
+                return True
+            if ".oauth" in str(path):
+                return False
+            return False
+
         mock_getenv.side_effect = getenv_side_effect
-        mock_exists.return_value = True
+        mock_exists.side_effect = exists_side_effect
 
         servers = _parse_mcp_servers()
         gmail_cfg = next((s for s in servers if s["server_name"] == "gmail"), None)
         
         self.assertIsNotNone(gmail_cfg)
         self.assertEqual(gmail_cfg["command"], "node")
-        self.assertTrue(gmail_cfg["args"][0].endswith("index.js"))
-        self.assertEqual(gmail_cfg["env"]["GMAIL_EMAIL"], "test@gmail.com")
-        self.assertEqual(gmail_cfg["env"]["GMAIL_APP_PASSWORD"], "1234abcd5678efgh")
+        self.assertTrue(gmail_cfg["args"][0].endswith("server.js"))
+        self.assertEqual(gmail_cfg["env"]["MAIL_ACCOUNTS"], "vishal")
+        self.assertEqual(gmail_cfg["env"]["MAIL_vishal_GMAIL_API_CLIENT_ID"], "test-client-id")
+        self.assertEqual(gmail_cfg["env"]["MAIL_vishal_GMAIL_API_CLIENT_SECRET"], "test-client-secret")
 
     @patch("os.getenv")
     @patch("os.path.exists")
@@ -48,14 +60,17 @@ class TestGmailCliConfig(unittest.TestCase):
         from aureon_agent.cli import _parse_mcp_servers
 
         def getenv_side_effect(key, default=None):
-            if key == "EMAIL_ADDRESS":
-                return "test@gmail.com"
-            if key == "EMAIL_PASSWORD":
-                return "1234"
+            if key == "GMAIL_API_CLIENT_ID":
+                return "test-client-id"
+            if key == "GMAIL_API_CLIENT_SECRET":
+                return "test-client-secret"
             return None
             
+        def exists_side_effect(path):
+            return False
+
         mock_getenv.side_effect = getenv_side_effect
-        mock_exists.return_value = False
+        mock_exists.side_effect = exists_side_effect
 
         servers = _parse_mcp_servers()
         gmail_cfg = next((s for s in servers if s["server_name"] == "gmail"), None)
