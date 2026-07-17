@@ -61,25 +61,44 @@ BACKOFF_CAP = 30.0
 USER_ID = "me"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 
+# Invoice-name signal (D3). Used to confirm an email is an invoice from its
+# subject, snippet, OR body — not just the attachment filename.
+INVOICE_NAME_RE = re.compile(r"rechnung|invoice|factur|账单|receipt|steuer|tax|bill", re.I)
 
-# --- attachment / filename helpers --------------------------------------
 
 def is_document(filename: str) -> bool:
     """True if the attachment is a downloadable document type."""
     return bool(filename) and bool(DOC_EXT_RE.search(filename))
 
 
-def looks_like_invoice(filename: str) -> bool:
-    """True if the filename itself carries an invoice token (D3 strict gate)."""
-    return bool(filename) and bool(INVOICE_NAME_RE.search(filename))
+def looks_like_invoice(text: str) -> bool:
+    """True if `text` (subject / snippet / body) carries an invoice token (D3)."""
+    return bool(text) and bool(INVOICE_NAME_RE.search(text))
 
 
-def should_download(filename: str, strict: bool = False) -> bool:
+def is_invoice_context(subject: str, snippet: str = "", body: str = "") -> bool:
+    """3rd detection layer: invoice token in subject OR snippet OR body.
+
+    The Gmail `subject:` search is a cheap pre-filter, but some invoices arrive
+    with a generic subject ("Your monthly statement") — the invoice token then
+    lives in the snippet/body. Scanning those catches them without an LLM.
+    """
+    return any(looks_like_invoice(t) for t in (subject, snippet, body))
+
+
+def should_download(filename: str, *, subject: str = "", snippet: str = "",
+                    body: str = "", strict: bool = False) -> bool:
     if not is_document(filename):
         return False
-    if strict and not looks_like_invoice(filename):
-        return False
-    return True
+    filename_is_invoice = looks_like_invoice(filename)
+    if strict:
+        # Strict: the invoice token must be in the attachment filename itself.
+        return filename_is_invoice
+    # Default: an invoice token anywhere (filename OR subject/snippet/body).
+    # The Gmail `subject:` query already pre-filters to invoice subjects, so
+    # query-matched emails pass via the subject token; generic-subject invoices
+    # are still caught via the snippet/body (3rd detection layer, D3).
+    return filename_is_invoice or is_invoice_context(subject, snippet, body)
 
 
 def ext_of(filename: str) -> str:
@@ -141,6 +160,27 @@ def unique_path(dest_dir, name: str) -> Path:
         if not cand.exists():
             return cand
         n += 1
+
+
+def find_plain_body(payload: dict) -> str:
+    """Extract the plain-text body from a Gmail payload tree (best-effort).
+
+    Used by the invoice-context check (D3) so invoices with a generic subject
+    are still recognised from body text. Returns '' if none found.
+    """
+    if not payload:
+        return ""
+    if payload.get("mimeType") == "text/plain" and payload.get("body", {}).get("data"):
+        data = payload["body"]["data"]
+        try:
+            return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("utf-8", "replace")
+        except (ValueError, UnicodeDecodeError):
+            return ""
+    for part in payload.get("parts") or []:
+        found = find_plain_body(part)
+        if found:
+            return found
+    return ""
 
 
 def iter_attachments(payload: dict):
@@ -273,9 +313,12 @@ def process_message(service, msg_id, *, dest_dir, strict, dry_run, sleeper, stat
     subject = header_value(msg, "Subject") or "(no subject)"
     sender = parse_sender(header_value(msg, "From"))
     date_str = internal_date_str(msg)
+    snippet = msg.get("snippet", "")
+    body = find_plain_body(msg.get("payload") or {})
 
     for filename, att_id, _size in iter_attachments(msg.get("payload") or {}):
-        if not should_download(filename, strict=strict):
+        if not should_download(filename, subject=subject, snippet=snippet,
+                               body=body, strict=strict):
             stats["skipped_non_invoice"] += 1
             continue
         out_name = make_filename(date_str, sender, filename, ext_of(filename))

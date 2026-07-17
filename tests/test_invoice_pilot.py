@@ -109,9 +109,21 @@ def test_is_document():
 
 
 def test_should_download_strict_gate():
+    # Default (non-strict) now REQUIRES an invoice token in the email context
+    # (subject/snippet/body) — not just any document attachment.
+    assert not ip.should_download("document.pdf")                       # no context -> skip
+    assert ip.should_download("document.pdf", subject="Monthly Invoice")  # subject token
+    assert ip.should_download("document.pdf", body="your rechnung is attached")  # body token
+    # Strict additionally demands the token in the filename itself.
     assert ip.should_download("invoice_123.pdf", strict=True)
-    assert not ip.should_download("document.pdf", strict=True)  # no invoice token
-    assert ip.should_download("document.pdf", strict=False)     # default trusts search
+    assert not ip.should_download("document.pdf", strict=True)          # no filename token
+
+
+def test_is_invoice_context_body_snippet():
+    # Invoices with a generic subject are still caught via snippet/body (D3 layer 3).
+    assert ip.is_invoice_context("Your monthly statement", snippet="find your Rechnung inside")
+    assert ip.is_invoice_context("Statement", body="tax invoice attached")
+    assert not ip.is_invoice_context("Hello", snippet="nice chat", body="thanks!")
 
 
 def test_make_filename_uses_attachment_name():
@@ -126,13 +138,17 @@ def test_unique_path_avoids_collision(tmp_path):
 
 
 def test_multi_attachment_email_no_overwrite(tmp_path):
+    # One email, two doc attachments: "Rechnung.pdf" (invoice) + "Retoure.pdf"
+    # (a return slip — no invoice token). Tightened detection downloads only the
+    # invoice, keying each saved file on its own attachment name (no overwrite).
     msg = {"1": _msg("1", subject="Order 5",
                      attachments=(("Rechnung.pdf", "a1"), ("Retoure.pdf", "a2")))}
     fake = _wire(FakeGmail(pages=[{"messages": [{"id": "1"}]}], messages=msg,
                            attachments={("1", "a1"): b"INV", ("1", "a2"): b"RET"}))
     ip.run(fake, query="q", dest_dir=str(tmp_path), sleeper=lambda _: None)
     pdfs = sorted(p.name for p in tmp_path.glob("*.pdf"))
-    assert len(pdfs) == 2  # both attachments kept, distinct names
+    assert pdfs == ["20231114_billing_rechnung.pdf"]  # only the invoice, not Retoure
+    assert next(tmp_path.glob("*rechnung*.pdf")).read_bytes() == b"INV"
 
 
 def test_parse_sender():
