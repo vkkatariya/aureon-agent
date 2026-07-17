@@ -4,10 +4,6 @@ This file provides the behavioral contract for all AI agents working on the aure
 
 ---
 
-## First Run
-
-If `BOOTSTRAP.md` exists, follow it. After completion, delete it.
-
 ## Every Session
 
 Before doing anything else, read in order:
@@ -16,16 +12,20 @@ Before doing anything else, read in order:
 2. `CONTEXT.md` — stack, infra, decisions
 3. `tasks/DEVLOG.md` (last 3 entries) — current world state
 4. `tasks/todo.md` — sprint items
-5. `workspace/tasks/todo.md` — Captain's active work
-6. `workspace/tasks/lessons.md` — active prevention rules
-7. `workspace/memory/2026-07-1?.md` — recent daily notes
-8. `tasks/kickoff-aureon-agent.md` — the full project spec
+5. `tasks/kickoff-aureon-agent.md` — the full project spec (14 sub-tasks, 5 phases)
+6. `workspace/tasks/todo.md` — Captain's active work (symlinked doctrine)
+7. `workspace/tasks/lessons.md` — active prevention rules
+8. `workspace/memory/2026-07-1?.md` — recent daily notes
 
 **Doctrine source of truth:** `workspace/` is symlinked to `~/.openclaw/workspace/`. SOUL, USER, IDENTITY, WORKFLOW, MEMORY all live there. Don't edit the symlinks. Edit the source.
+
+**Workflow source of truth:** `workflow/` is a symlink to `~/dev-shared/workflow/` (gitignored). Read `./workflow/*.md` for SESSION-WORKFLOW, AI-ROUTING, GIT-GITHUB-BLUEPRINT, agents_workflow/AI-AGENTS-ORCHESTRATION. Don't duplicate that content in this file.
 
 **Don't ask permission. Just do it.**
 
 ## The 6-Rule Contract (Captain's standing order)
+
+Per `workspace/WORKFLOW.md` and `~/dev-shared/workflow/agents_workflow/AI-AGENTS-ORCHESTRATION.md`:
 
 1. **Plan Node** — `workspace/tasks/todo.md` (Captain's) or `tasks/todo.md` (project) for any task with 3+ steps before any code
 2. **Subagent Strategy** — keep context focused, one track per subagent, flag research/parallel work for `delegate_task`
@@ -41,10 +41,11 @@ Plan first → verify plan (≥3 steps) → track [x] → explain (high-level) �
 ## Git contract
 
 - Branch: `feat/<task>` or `fix/<bug>` before touching files
-- Commits: `feat/fix/docs/chore/refactor/homelab` prefix
+- Commits: `feat/fix/docs/chore/refactor` prefix
 - Format: `agent(<name>): <description>`
 - Push before session ends — always
 - Never commit: `.env`, secrets, `data/*.db`, `__pycache__/`
+- Per `~/dev-shared/workflow/GIT-GITHUB-BLUEPRINT.md` for full rules
 
 ## Safety
 
@@ -53,7 +54,7 @@ Plan first → verify plan (≥3 steps) → track [x] → explain (high-level) �
 - `trash` > `rm` (recoverable beats gone forever)
 - When in doubt, ask.
 - **Telegram chat ID allowlist.** Drop messages from non-allowed chats silently.
-- **Caveman mode always-on** in replies (per `agent.environment_hint` + SOUL.md).
+- **Caveman mode always-on** in replies (per `agent.environment_hint` + SOUL.md `caveman-begin/end` block).
 - **No `0.0.0.0` binds.** Localhost or Tailscale only.
 - **OpenClaw config (`~/.openclaw/openclaw.json`) is locked.** Read-only OK, any write → ask first.
 
@@ -77,18 +78,10 @@ Stay silent when:
 
 ## Tools
 
-Skills provide your tools. When you need one, check its `SKILL.md` (in `workspace/skills/<name>/SKILL.md` or for this project, `~/.claude/skills/<name>/SKILL.md`).
+Skills provide your tools. When you need one, check its `SKILL.md`:
 
-## Files that MUST exist before any meaningful work
-
-- [ ] `CLAUDE.md` ✓ (exists)
-- [ ] `CONTEXT.md` ✓ (exists)
-- [ ] `AGENTS.md` ✓ (this file)
-- [ ] `tasks/todo.md` (initialize when first task starts)
-- [ ] `tasks/DEVLOG.md` (initialize when first session starts)
-- [ ] `workspace/tasks/todo.md` ✓ (exists, empty)
-- [ ] `workspace/tasks/lessons.md` ✓ (exists, empty)
-- [ ] `README.md` ✓ (exists)
+- Workspace skills: `workspace/skills/<name>/SKILL.md` (8 doctrine skills, symlinked from `~/.openclaw/workspace/skills/`)
+- Global skills: `~/.hermes/skills/<name>/SKILL.md` (top-level + categorized)
 
 ## When in doubt
 
@@ -96,3 +89,4 @@ Skills provide your tools. When you need one, check its `SKILL.md` (in `workspac
 - **Did Captain ask for elevation?** If no, don't elevate.
 - **Did Captain ask for a script that needs bash?** Write the script. Let the runtime ask for approval.
 - **Is Captain frustrated?** Stop, apologize, list the loose ends, ask for the one thing that unblocks them. Do not push more patches.
+- **Drift from convention?** If `CLAUDE.md` / `AGENTS.md` / `CONTEXT.md` structure diverges from sibling projects in `~/dev-shared/projects/`, audit and fix before doing anything else.

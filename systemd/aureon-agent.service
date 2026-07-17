@@ -1,0 +1,20 @@
+[Unit]
+Description=aureon-agent — personal AI agent (Telegram + Discord)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/radxa/dev-shared/projects/aureon-agent
+ExecStart=/home/radxa/dev-shared/projects/aureon-agent/.venv/bin/python -m aureon_agent
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Captain's hard rules
+# - No 0.0.0.0 binds (HEALTH_PORT defaults to 7777 on 127.0.0.1)
+# - Telegram chat ID allowlist (env-driven, validated in doctor.py)
+# - Caveman mode always-on (env_hint in ~/.hermes/config.yaml)
+
+[Install]
+WantedBy=default.target

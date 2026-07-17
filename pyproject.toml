@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aureon-agent"
+version = "0.4.0"
+description = "Personal AI agent with Ollama local + cloud fallback, doctrine-aware startup, and multi-channel (Telegram + Discord) support"
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+packages = ["aureon_agent", "channels"]
+py-modules = ["agent_runtime", "context_builder", "memory", "session_manager", "skill_loader", "plan_node", "lessons"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+[project.scripts]
+aureon-agent = "aureon_agent.__main__:main"
+aureon-agent-setup = "aureon_agent.setup:main"
+aureon-agent-doctor = "aureon_agent.doctor:main"
+aureon-agent-postinstall = "aureon_agent.postinstall:main"

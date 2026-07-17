@@ -1,11 +1,16 @@
 .env
 .env.local
+.venv/
 __pycache__/
 *.pyc
+.venv/
+aureon_agent.egg-info/
+*.egg-info/
 data/*.db
 data/*.db-wal
 data/*.db-shm
 data/*.db-journal
+workflow/                # symlink to ~/dev-shared/workflow/, gitignored
 workspace/.openclaw/
 workspace/.pi/
 workspace/.venv-*/
@@ -15,3 +20,5 @@ node_modules/
 .DS_Store
 *.log
 .pytest_cache/
+references/tiny-openclaw/.upstream-changes/
+tokens/
