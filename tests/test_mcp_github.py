@@ -106,7 +106,9 @@ class TestGitHubCliConfig(unittest.TestCase):
             return None
             
         mock_getenv.side_effect = getenv_side_effect
-        mock_exists.return_value = True
+        mock_exists.side_effect = lambda path: str(path).endswith(
+            "@modelcontextprotocol/server-github/dist/index.js"
+        )
 
         servers = _parse_mcp_servers()
         github_cfg = next((s for s in servers if s["server_name"] == "github"), None)
