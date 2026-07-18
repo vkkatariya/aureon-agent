@@ -187,20 +187,11 @@ def check_mcp_servers() -> Tuple[str, str]:
             "~/.npm-global/lib/node_modules/@modelcontextprotocol/server-github/dist/index.js"
         )
         servers.append(("github", os.path.exists(github_bin)))
-    # Check Gmail
-    gmail_client_id = os.environ.get("GMAIL_API_CLIENT_ID")
-    gmail_client_secret = os.environ.get("GMAIL_API_CLIENT_SECRET")
-    
-    oauth_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tokens", ".oauth")
-    if os.path.exists(oauth_file):
-        with open(oauth_file, "r") as f:
-            for line in f:
-                if "=" in line:
-                    k, v = line.strip().split("=", 1)
-                    if k == "GMAIL_API_CLIENT_ID" and not gmail_client_id:
-                        gmail_client_id = v
-                    if k == "GMAIL_API_CLIENT_SECRET" and not gmail_client_secret:
-                        gmail_client_secret = v
+    # Check Gmail — must match cli.py logic exactly (Phase 7.3 OAuth)
+    # Reads GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET (NOT the
+    # dead GMAIL_API_* names, NOT the removed tokens/.oauth file).
+    gmail_client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+    gmail_client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
 
     if gmail_client_id and gmail_client_secret:
         gmail_bin = os.path.expanduser(
