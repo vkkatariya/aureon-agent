@@ -75,6 +75,7 @@ class TelegramChannel(Channel):
         if not raw:
             return
         cmd = raw[0].split("@")[0].lower()
+        logger.info("telegram._on_command: chat_id=%s cmd=%s", chat_id, cmd)
 
         if cmd == "help":
             lines = ["**Available commands:**"] + [
