@@ -1,10 +1,12 @@
 """Telegram adapter: polling, chat ID allowlist, streaming via editMessageText
-throttled to 1 edit/sec, 4096-char reply chunking."""
+throttled to 1 edit/sec, 4096-char reply chunking, and /slash command surface."""
 import asyncio
 import logging
+import subprocess
+import sys
 import time
 
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application, MessageHandler, CommandHandler, filters
 
 from channels.base import Channel
 
@@ -12,6 +14,18 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_LEN = 4096
 EDIT_THROTTLE_SECONDS = 1.0
+
+# Slash commands -> aureon-agent CLI subcommand (reuse 1:1, no logic duplication).
+# Nested subcommands (mcp/cron) handled specially below.
+SLASH_COMMANDS = {
+    "sessions": ["sessions"],
+    "doctor": ["doctor"],
+    "status": ["status"],
+    "version": ["version"],
+    "mcp": ["mcp", "list"],
+    "cron": ["cron", "list"],
+    "logs": ["logs"],
+}
 
 
 class TelegramChannel(Channel):
@@ -24,6 +38,7 @@ class TelegramChannel(Channel):
 
     async def start(self):
         self._app = Application.builder().token(self.token).build()
+        self._app.add_handler(CommandHandler(list(SLASH_COMMANDS.keys()) + ["help"], self._on_command))
         self._app.add_handler(MessageHandler(filters.TEXT, self._on_message))
         await self._app.initialize()
         await self._app.start()
@@ -49,6 +64,56 @@ class TelegramChannel(Channel):
 
     async def send_action(self, chat_id, action):
         await self._app.bot.send_chat_action(chat_id=chat_id, action=action)
+
+    async def _on_command(self, update, _context):
+        chat_id = str(update.effective_chat.id)
+        if chat_id not in self.allowed_chats:
+            return
+
+        # Parse: "/cmd@botname args" -> "cmd"
+        raw = (update.message.text or "").lstrip("/").split()
+        if not raw:
+            return
+        cmd = raw[0].split("@")[0].lower()
+
+        if cmd == "help":
+            lines = ["**Available commands:**"] + [
+                f"/{name} — {desc}" for name, desc in [
+                    ("sessions", "list all chat sessions"),
+                    ("doctor", "health checks"),
+                    ("status", "systemd service status"),
+                    ("mcp", "list MCP servers + tools"),
+                    ("cron", "list cron jobs"),
+                    ("logs", "recent bot logs"),
+                    ("version", "agent version"),
+                    ("help", "this message"),
+                ]
+            ]
+            await self.send_message(chat_id, "\n".join(lines))
+            return
+
+        cli_args = SLASH_COMMANDS.get(cmd)
+        if not cli_args:
+            await self.send_message(chat_id, f"Unknown command: /{cmd}")
+            return
+
+        await self.send_action(chat_id, "typing")
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                [sys.executable, "-m", "aureon_agent.__main__", *cli_args],
+                capture_output=True, text=True, timeout=60,
+            )
+            out = (proc.stdout or proc.stderr or "").strip()
+        except Exception as e:
+            out = f"Error running /{cmd}: {e}"
+
+        if not out:
+            out = f"(/ {cmd} produced no output)"
+        # Chunk to Telegram's 4096 limit
+        chunks = [out[i:i + TELEGRAM_MAX_LEN] for i in range(0, len(out), TELEGRAM_MAX_LEN)]
+        for chunk in chunks:
+            await self.send_message(chat_id, chunk)
 
     async def _on_message(self, update, _context):
         chat_id = str(update.effective_chat.id)

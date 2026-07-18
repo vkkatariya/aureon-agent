@@ -1,6 +1,7 @@
 import argparse
 import sys
 import subprocess
+import os
 
 from aureon_agent import __version__
 from aureon_agent.cli import main as run_start
@@ -176,6 +177,54 @@ def cmd_subagent_log(args):
 def cmd_version(args):
     print(f"aureon-agent v{__version__}")
 
+
+def cmd_sessions(args):
+    """List all chat sessions from sessions.db (channel:client_id, msg count, last active)."""
+    import asyncio
+    import time as _time
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from session_manager import SessionManager
+
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(BASE_DIR, "data", "sessions.db")
+
+    async def _run():
+        sm = SessionManager(db_path)
+        await sm.connect()
+        try:
+            return await sm.list_sessions()
+        finally:
+            await sm.close()
+
+    sessions = asyncio.run(_run())
+    console = Console()
+
+    if not sessions:
+        console.print("[yellow]No sessions found.[/yellow]")
+        return
+
+    table = Table(title="Chat Sessions")
+    table.add_column("Session ID", style="cyan")
+    table.add_column("Channel")
+    table.add_column("Client")
+    table.add_column("Msgs", justify="right")
+    table.add_column("Last active")
+
+    for s in sessions:
+        updated = s.get("updated_at")
+        last = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(updated)) if updated else "—"
+        table.add_row(
+            s["session_id"],
+            s.get("channel") or "—",
+            s.get("client_id") or "—",
+            str(s.get("msg_count", 0)),
+            last,
+        )
+    console.print(table)
+
 def main():
     parser = argparse.ArgumentParser(description="aureon-agent CLI")
     subparsers = parser.add_subparsers(dest="command")
@@ -226,6 +275,9 @@ def main():
     # version
     subparsers.add_parser("version", help="Print version")
     
+    # sessions
+    subparsers.add_parser("sessions", help="List all chat sessions")
+    
     # If no args provided, default to 'start'
     if len(sys.argv) == 1:
         sys.argv.append("start")
@@ -268,6 +320,8 @@ def main():
             print("Usage: aureon-agent mcp list")
     elif args.command == "version":
         cmd_version(args)
+    elif args.command == "sessions":
+        cmd_sessions(args)
 
 if __name__ == "__main__":
     main()

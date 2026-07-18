@@ -84,3 +84,28 @@ class SessionManager:
                 entry["tool_calls"] = json.loads(tool_calls)
             history.append(entry)
         return history
+
+    async def list_sessions(self) -> list[dict]:
+        """List all sessions with message counts + last activity.
+
+        Returns rows ordered by most-recently-updated first. Each dict:
+        {session_id, channel, client_id, msg_count, updated_at, created_at}
+        """
+        cursor = await self._db.execute(
+            "SELECT s.session_id, s.channel, s.client_id, s.created_at, s.updated_at, "
+            "COUNT(m.idx) AS msg_count "
+            "FROM sessions s LEFT JOIN messages m ON s.session_id = m.session_id "
+            "GROUP BY s.session_id ORDER BY s.updated_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "session_id": r[0],
+                "channel": r[1],
+                "client_id": r[2],
+                "created_at": r[3],
+                "updated_at": r[4],
+                "msg_count": r[5],
+            }
+            for r in rows
+        ]
