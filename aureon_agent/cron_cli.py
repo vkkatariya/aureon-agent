@@ -46,6 +46,20 @@ async def _get_db() -> CronDB:
     return db
 
 
+async def _resolve_job(db: CronDB, ref: str) -> dict | None:
+    """Resolve a job by ID or by name. CLI args accept either; name lookup
+    falls back to scanning list_jobs() so `cron run invoice-weekly` works
+    (not just the raw ID)."""
+    job = await db.get_job(ref)
+    if job:
+        return job
+    ref_l = ref.lower()
+    for j in await db.list_jobs():
+        if j["name"].lower() == ref_l:
+            return j
+    return None
+
+
 def cmd_cron(args):
     """Dispatch cron subcommands."""
     sub = args.cron_command
@@ -155,20 +169,20 @@ async def _cmd_create(args):
 async def _cmd_pause(args):
     db = await _get_db()
     try:
-        job = await db.get_job(args.job_id)
+        job = await _resolve_job(db, args.job_id)
         if not job:
             print(f"Job {args.job_id} not found")
             return
-        await db.update_job(args.job_id, enabled=0)
+        await db.update_job(job["id"], enabled=0)
     finally:
         await db.close()
-    print(f"Paused job {args.job_id} ({job['name']})")
+    print(f"Paused job {job['id']} ({job['name']})")
 
 
 async def _cmd_resume(args):
     db = await _get_db()
     try:
-        job = await db.get_job(args.job_id)
+        job = await _resolve_job(db, args.job_id)
         if not job:
             print(f"Job {args.job_id} not found")
             return
@@ -180,38 +194,38 @@ async def _cmd_resume(args):
             tz=job.get("tz", "UTC"),
             exact=bool(job.get("exact", 0)),
         )
-        await db.update_job(args.job_id, enabled=1, next_run_at=next_run)
+        await db.update_job(job["id"], enabled=1, next_run_at=next_run)
     finally:
         await db.close()
-    print(f"Resumed job {args.job_id} ({job['name']}), next run: {_relative_time(next_run)}")
+    print(f"Resumed job {job['id']} ({job['name']}), next run: {_relative_time(next_run)}")
 
 
 async def _cmd_run(args):
     db = await _get_db()
     try:
-        job = await db.get_job(args.job_id)
+        job = await _resolve_job(db, args.job_id)
         if not job:
             print(f"Job {args.job_id} not found")
             return
         # Force run on next tick by setting next_run_at to now
-        await db.update_job(args.job_id, next_run_at=time.time(), enabled=1)
+        await db.update_job(job["id"], next_run_at=time.time(), enabled=1)
     finally:
         await db.close()
-    print(f"Job {args.job_id} ({job['name']}) queued for next scheduler tick")
+    print(f"Job {job['id']} ({job['name']}) queued for next scheduler tick")
 
 
 async def _cmd_remove(args):
     db = await _get_db()
     try:
-        job = await db.get_job(args.job_id)
+        job = await _resolve_job(db, args.job_id)
         if not job:
             print(f"Job {args.job_id} not found")
             return
-        removed = await db.remove_job(args.job_id)
+        removed = await db.remove_job(job["id"])
     finally:
         await db.close()
     if removed:
-        print(f"Removed job {args.job_id} ({job['name']}). Run history preserved.")
+        print(f"Removed job {job['id']} ({job['name']}). Run history preserved.")
     else:
         print(f"Failed to remove job {args.job_id}")
 
@@ -222,12 +236,16 @@ async def _cmd_runs(args):
 
     db = await _get_db()
     try:
-        runs = await db.list_runs(args.job_id, limit=args.last)
-        job = await db.get_job(args.job_id)
+        job = await _resolve_job(db, args.job_id)
+        if not job:
+            print(f"Job {args.job_id} not found")
+            return
+        runs = await db.list_runs(job["id"], limit=args.last)
     finally:
         await db.close()
 
-    job_name = job["name"] if job else args.job_id
+    job_name = job["name"]
+
 
     if not runs:
         print(f"No runs found for job {args.job_id}")
