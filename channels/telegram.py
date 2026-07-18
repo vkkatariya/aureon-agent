@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from telegram.ext import Application, MessageHandler, CommandHandler, filters
+from telegram.ext import Application, MessageHandler, filters
 
 from channels.base import Channel
 
@@ -38,7 +38,9 @@ class TelegramChannel(Channel):
 
     async def start(self):
         self._app = Application.builder().token(self.token).build()
-        self._app.add_handler(CommandHandler(list(SLASH_COMMANDS.keys()) + ["help"], self._on_command))
+        # Commands are routed inside _on_message (which reliably fires for
+        # sendMessage-injected /commands); PTB's CommandHandler entity
+        # matching was unreliable for API-sent commands.
         self._app.add_handler(MessageHandler(filters.TEXT, self._on_message))
         await self._app.initialize()
         await self._app.start()
@@ -123,6 +125,11 @@ class TelegramChannel(Channel):
 
         text = update.message.text
         if not text:
+            return
+
+        # Route slash commands to the command handler (no LLM).
+        if text.startswith("/"):
+            await self._on_command(update, _context)
             return
 
         placeholder = await update.message.reply_text("…")
