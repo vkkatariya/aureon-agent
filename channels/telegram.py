@@ -120,8 +120,6 @@ class TelegramChannel(Channel):
 
     async def _on_message(self, update, _context):
         chat_id = str(update.effective_chat.id)
-        text = update.message.text if update.message else None
-        logger.info("telegram._on_message ENTER chat_id=%s text=%r", chat_id, text)
         if chat_id not in self.allowed_chats:
             return
 
