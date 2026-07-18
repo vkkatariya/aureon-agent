@@ -13,7 +13,21 @@ from channels.base import Channel
 logger = logging.getLogger(__name__)
 
 TELEGRAM_MAX_LEN = 4096
+CODEBLOCK_CHUNK_LEN = 3900  # leave headroom for the ``` fences + escapes
 EDIT_THROTTLE_SECONDS = 1.0
+
+
+def _md_code_block(text: str) -> str:
+    """Wrap text in a MarkdownV2 fenced code block. Inside a code block only
+    backslash and backtick need escaping (Telegram MarkdownV2 rules)."""
+    escaped = text.replace("\\", "\\\\").replace("`", "\\`")
+    return f"```\n{escaped}\n```"
+
+
+def _chunk_for_codeblock(text: str) -> list:
+    text = text.strip()
+    return [text[i:i + CODEBLOCK_CHUNK_LEN]
+            for i in range(0, len(text), CODEBLOCK_CHUNK_LEN)] or [""]
 
 # Slash commands -> aureon-agent CLI subcommand (reuse 1:1, no logic duplication).
 # Nested subcommands (mcp/cron) handled specially below.
@@ -53,8 +67,8 @@ class TelegramChannel(Channel):
         await self._app.stop()
         await self._app.shutdown()
 
-    async def send_message(self, chat_id, text):
-        return await self._app.bot.send_message(chat_id=chat_id, text=text)
+    async def send_message(self, chat_id, text, parse_mode=None):
+        return await self._app.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
 
     async def edit_message(self, chat_id, message_id, text):
         text_to_send = text or "…"
@@ -113,10 +127,12 @@ class TelegramChannel(Channel):
 
         if not out:
             out = f"(/ {cmd} produced no output)"
-        # Chunk to Telegram's 4096 limit
-        chunks = [out[i:i + TELEGRAM_MAX_LEN] for i in range(0, len(out), TELEGRAM_MAX_LEN)]
-        for chunk in chunks:
-            await self.send_message(chat_id, chunk)
+        # Wrap CLI output (Rich tables) in a MarkdownV2 code block so Telegram
+        # renders it as aligned monospace — box-drawing chars and column
+        # alignment collapse in plain text. Chunk first (leaving room for the
+        # fences), then fence each chunk independently.
+        for chunk in _chunk_for_codeblock(out):
+            await self.send_message(chat_id, _md_code_block(chunk), parse_mode="MarkdownV2")
 
     async def _on_message(self, update, _context):
         chat_id = str(update.effective_chat.id)
