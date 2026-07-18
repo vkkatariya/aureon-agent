@@ -65,11 +65,8 @@ def cmd_stop(args):
     subprocess.run(["systemctl", "--user", "stop", "aureon-agent.service"], check=False)
 
 def cmd_status(args):
-    try:
-        out = subprocess.check_output(["systemctl", "--user", "status", "aureon-agent.service", "--no-pager"], text=True)
-        print(out)
-    except subprocess.CalledProcessError as e:
-        print(e.output)
+    from aureon_agent.status import cmd_status as _rich_status
+    _rich_status(args)
 
 def cmd_logs(args):
     subprocess.run(["journalctl", "--user", "-u", "aureon-agent.service", "-f"])
