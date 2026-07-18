@@ -12,13 +12,12 @@
         ├─ Engine A: invoice_pilot.py ──────────google-api-python-client──> Gmail API direct
         ├─ Engine B: MCP patch downloadAttachment ──aureon agent drives──> chat (Telegram/Discord)
         └─ Engine C: scheduler (recurrence)
-              ├─ variant 1: systemd timer  (deterministic script + .seen dedup)
-              └─ variant 2: aureon cron invoice-weekly (LLM drives MCP tools per turn, Telegram summary)
+              └─ aureon cron invoice-weekly (LLM drives MCP tools per turn, Telegram summary)
 ```
 
 **One OAuth base, three consumers.** The hard part (Gmail OAuth dance) was paid once, earlier. All three engines reuse the same `refresh_token` + client creds. None stores the mailbox password — OAuth 2.0 only.
 
-**Why three engines?** The interview task said "AI-agents **bzw.** automated workflows" (i.e. OR). Engine A = the workflow. Engine B = the agent. Engine C = how it recurs without a human. Covering both phrasings shows range.
+**Why three pieces?** The interview task said "AI-agents **bzw.** automated workflows" (i.e. OR). Engine A = the standalone workflow script (deterministic, for backfill/dry-run). Engine B = the agent-driven path (MCP tools, chat). Engine C = the agent-native recurrence (`invoice-weekly` cron, Telegram summary). The script + agent cover both phrasings; recurrence stays fully agent-native.
 
 ---
 
@@ -87,16 +86,12 @@ Discovered automatically by aureon's `MCPManager` after the server is patched. N
 
 ## Engine C — scheduler (recurrence)
 
-**Variant 1 — systemd timer (`systemd/aureon-invoice.timer` + `.service`):**
-- `OnCalendar=Mon *-*-* 09:00`, `Persistent=true` (missed run catches up on boot).
-- Runs `invoice_pilot.py --incremental` deterministically. Reuses Engine A + `.seen` dedup.
-
-**Variant 2 — aureon cron (`invoice-weekly`, registered via `scripts/seed-invoice-cron.sh`):**
+**aureon cron (`invoice-weekly`, registered via `scripts/seed-invoice-cron.sh`):**
 - `aureon-agent cron create "0 9 * * 1" --tz Europe/Berlin --name invoice-weekly`.
 - The cron prompt drives the Engine B MCP tools **as an agent turn** (LLM chains search→read→download), then delivers a **Telegram summary**.
 - Live-proven: `minimax-m2.5:cloud` chained 4 rounds, saved a real 75KB `%PDF`.
 
-Both variants sit alongside `homelaw-health-daily`. The agent-scheduler is the "AI agent does recurring work" framing; the systemd timer is the "deterministic workflow" framing.
+This is the agent-native recurrence path — it reuses the MCP tools, surfaces in chat/Telegram, and fits aureon's workflow. (An earlier systemd-timer variant was dropped: it bypassed the agent and duplicated the same work outside the runtime.)
 
 ---
 
@@ -155,9 +150,8 @@ cron recurrence:
 | `mcp-patches/gmail-api.js.patch` + `server.js.patch` + `apply.sh` | Engine B — staged MCP patch (applied to global npm module) |
 | `tests/mcp_gmail_download.test.mjs` | Engine B — 429 backoff + write, no network |
 | `live_test_gmail_download.py` | Engine B — live E2E via aureon's MCPManager |
-| `systemd/aureon-invoice.timer` + `.service` | Engine C variant 1 |
-| `scripts/seed-invoice-cron.sh` | Engine C variant 2 — registers `invoice-weekly` cron job |
-| `live_test_invoice_cron.py` | Engine C variant 2 — live cron verification |
+| `scripts/seed-invoice-cron.sh` | Engine C — registers `invoice-weekly` cron job |
+| `live_test_invoice_cron.py` | Engine C — live cron verification |
 | `tasks/kickoff-invoice-pilot.md` | the plan (v2) |
 | `tokens/vishal.json` | OAuth refresh token (gitignored, 600) |
 | `.env` | GOOGLE_OAUTH_CLIENT_ID / _SECRET (gitignored, 600) |
@@ -168,7 +162,7 @@ cron recurrence:
 
 - **Engine A:** `python invoice_pilot.py --dry-run` → 2 real candidates (buyZOXS 86KB, OpenAI 75KB), correct filenames, 0 false-positives, no 429. Real run wrote both PDFs to `~/dev-shared/docs/invoices/`.
 - **Engine B:** `live_test_gmail_download.py` → discovered `mcp_gmail_download_attachment`, `read_message` surfaced `attachmentId`, downloaded real 75KB `%PDF` via aureon's MCPManager.
-- **Engine C:** `invoice-weekly` cron job active (next run in ~2d). systemd timer installed.
+- **Engine C:** `invoice-weekly` cron job active (next run in ~2d). Agent-native recurrence via aureon scheduler.
 - **Tests:** 97 pytest pass (77 existing + 20 invoice). ruff clean. CI green.
 
 ---
