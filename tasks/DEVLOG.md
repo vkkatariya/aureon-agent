@@ -3,6 +3,20 @@
 
 ---
 
+## 2026-07-18 — Rich `/status` + Telegram code-block wrap + version fix (local session, branch `feat/rich-status-cmd`)
+**Did:** Rewrote the thin `/status` (was just `systemctl status`) into a rich multi-section block mirroring the OpenClaw/Hermes status pages; fixed the Telegram table-breaking bug for all `/` commands; fixed the stale version header.
+**Built:**
+- `aureon_agent/status.py` (new): `gather_status(data_dir)` → dict of plain strings, never raises (systemctl/git/db absent → `n/a`/`unknown`); `render_status()` formats with Rich (5 sections: service+uptime, runtime/model, tokens/context, session, cron+mcp). No agent round-trip, no live LLM ping, no secrets (API key shown as presence `set`/`none` only). Reuses `SessionManager`, `CronDB`, `doctor.check_mcp_servers`. Self-contained `MODEL_CONTEXT_WINDOWS` lookup (session-compaction's fuller table isn't on this branch). `cmd_status` in `__main__.py` now delegates here.
+- `channels/telegram.py`: `_md_code_block()` + `_chunk_for_codeblock()`; `_on_command` wraps every CLI-command reply in a MarkdownV2 fenced code block (chunk first at 3900 to leave fence headroom, fence each chunk, escape `\`/`` ` ``). `send_message` gained an optional `parse_mode` (streaming reply path unchanged). Fixes `/sessions` + `/doctor` + `/status` + `/cron` + `/mcp` rendering as garbled tables in chat.
+- `aureon_agent/__init__.py`: `__version__` 0.1.0 → 0.5.1 (the stale `v0.1.0` doctor header — banner/doctor/status/version all read `__version__`, so the one bump fixes them all).
+- Tests: `tests/test_status_cmd.py` (graceful-degrade when systemctl/git absent, session section reflects a seeded `SessionManager`, no-secret assertion, empty-data-dir, render smoke, context-window lookup) + `tests/test_telegram_slash.py` (code-block fencing, backslash/backtick escaping, chunking, every-chunk-fenced).
+**Note on the wrap:** the kickoff's `f"```\n{out}\n```"` alone renders literal backticks in Telegram without a markdown `parse_mode` — implemented with `parse_mode="MarkdownV2"` + the two required escapes so it actually renders monospace.
+**Verified:** `aureon-agent status` prints the full live block (v0.5.1, real telegram session 95 msgs / 4.5% context, 3 MCP servers, uptime service+system). `doctor` + `version` now show v0.5.1. `pytest tests/` 111 passed; `ruff` clean. Telegram round-trip (visual monospace in chat) needs the bot restarted to load the new adapter — deferred to Captain.
+**Next:** PR to `dev`. Captain: restart bot to pick up the telegram.py wrap + new `/status` (and, from the prior task, the patched `download_attachment` MCP tool).
+**Modified/new:** `aureon_agent/status.py` (new), `aureon_agent/__main__.py`, `aureon_agent/__init__.py`, `channels/telegram.py`, `tests/test_status_cmd.py` (new), `tests/test_telegram_slash.py` (new), `tasks/kickoff-rich-status-cmd.md` (new), `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-18 — Invoice auto-downloader prototype (local session, branch `feat/invoice-pilot`)
 **Did:** Built the interview-task prototype: search a Gmail inbox, recognize invoices, download attachments to a folder. Two engines on one OAuth base + a weekly scheduler. All three live-verified against the real inbox (~6500 emails).
 **Built:**
