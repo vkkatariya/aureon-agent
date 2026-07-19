@@ -377,7 +377,7 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - Extract `build_runtime()` from `cli.py` if `start()` tightly couples bot boot (TUI + bot share it).
 - `prompt_toolkit` added to `requirements.txt` (pure-python, no native build).
 
-**Status:** ⏳ planned, kickoff done, NOT dispatched yet. Pending Captain sign-off / dispatch.
+**Status:** ✅ DONE (TUI built, Rich chrome /help and banner shipped).
 
 ## 2026-07-18/19 carry-over fixes (DONE, verify DEVLOG)
 
