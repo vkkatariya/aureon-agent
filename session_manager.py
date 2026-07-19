@@ -105,7 +105,11 @@ class SessionManager:
         """List all sessions with message counts + last activity.
 
         Returns rows ordered by most-recently-updated first. Each dict:
-        {session_id, channel, client_id, msg_count, updated_at, created_at}
+        {session_id, channel, client_id, msg_count, created_at, updated_at, status}
+        where `status` is derived from `updated_at`:
+          active  -> updated < 24h ago
+          idle    -> updated 1-7 days ago
+          stale   -> updated > 7 days ago (or never)
         """
         cursor = await self._db.execute(
             "SELECT s.session_id, s.channel, s.client_id, s.created_at, s.updated_at, "
@@ -113,15 +117,25 @@ class SessionManager:
             "FROM sessions s LEFT JOIN messages m ON s.session_id = m.session_id "
             "GROUP BY s.session_id ORDER BY s.updated_at DESC"
         )
+        now = time.time()
         rows = await cursor.fetchall()
-        return [
-            {
+        out = []
+        for r in rows:
+            updated = r[4] or 0.0
+            age = now - updated
+            if age < 86400:
+                status = "active"
+            elif age < 7 * 86400:
+                status = "idle"
+            else:
+                status = "stale"
+            out.append({
                 "session_id": r[0],
                 "channel": r[1],
                 "client_id": r[2],
                 "created_at": r[3],
                 "updated_at": r[4],
                 "msg_count": r[5],
-            }
-            for r in rows
-        ]
+                "status": status,
+            })
+        return out

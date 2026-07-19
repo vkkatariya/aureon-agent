@@ -208,16 +208,20 @@ def cmd_sessions(args):
     table.add_column("Channel")
     table.add_column("Client")
     table.add_column("Msgs", justify="right")
+    table.add_column("Status")
     table.add_column("Last active")
 
+    _status_style = {"active": "green", "idle": "yellow", "stale": "dim"}
     for s in sessions:
         updated = s.get("updated_at")
         last = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(updated)) if updated else "—"
+        status = s.get("status", "stale")
         table.add_row(
             s["session_id"],
             s.get("channel") or "—",
             s.get("client_id") or "—",
             str(s.get("msg_count", 0)),
+            f"[{_status_style.get(status, 'dim')}]{status}[/{_status_style.get(status, 'dim')}]",
             last,
         )
     console.print(table)
