@@ -46,6 +46,31 @@ def test_list_sessions_empty(tmp_db):
     assert rows == []
 
 
+def test_clear_session(tmp_db):
+    _seed_sync(tmp_db, [("723865496", "telegram", 4)])
+    db = SessionManager(tmp_db.db_path)
+    asyncio.run(db.connect())
+    try:
+        sid = "telegram:723865496"
+        assert len(asyncio.run(db.get_history(sid))) == 4
+        cleared = asyncio.run(db.clear_session(sid))
+        assert cleared == 4
+        assert asyncio.run(db.get_history(sid)) == []
+        # session row survives so the chat keeps working
+        rows = asyncio.run(db.list_sessions())
+        assert len(rows) == 1 and rows[0]["msg_count"] == 0
+    finally:
+        asyncio.run(db.close())
+
+
+def test_clear_missing_session_no_error(tmp_db):
+    asyncio.run(tmp_db.connect())
+    try:
+        assert asyncio.run(tmp_db.clear_session("telegram:does-not-exist")) == 0
+    finally:
+        asyncio.run(tmp_db.close())
+
+
 def test_cli_sessions_command_runs(tmp_path):
     """End-to-end: list_sessions returns the seeded row from a temp DB."""
     db = SessionManager(str(tmp_path / "sessions.db"))

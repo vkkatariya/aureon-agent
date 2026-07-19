@@ -222,6 +222,49 @@ def cmd_sessions(args):
         )
     console.print(table)
 
+def cmd_skills_list(args):
+    """List loaded doctrine skills (name + description + path) as a Rich table.
+
+    Reads from the same workspace/skills dir cli.py loads at boot, so output
+    matches the running bot's active skills."""
+    import asyncio
+    import logging
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from skill_loader import SkillLoader
+
+    logging.getLogger("skill_loader").setLevel(logging.WARNING)  # quiet per-skill INFO
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    skills_dir = os.path.join(BASE_DIR, "workspace", "skills")
+
+    async def _load():
+        loader = SkillLoader(skills_dir)
+        await loader.load()
+        return loader.get_active_skills()
+
+    skills = asyncio.run(_load())
+    console = Console()
+
+    if not skills:
+        console.print("[yellow]No skills loaded.[/yellow]")
+        return
+
+    table = Table(title=f"Doctrine Skills ({len(skills)})")
+    table.add_column("Skill", style="cyan")
+    table.add_column("Description", overflow="fold")
+    table.add_column("Path", style="dim", overflow="fold")
+
+    home = os.path.expanduser("~")
+    for s in skills:
+        path = s.get("path", "") or "—"
+        if path.startswith(home):
+            path = "~" + path[len(home):]
+        table.add_row(s["name"], s.get("description") or "—", path)
+    console.print(table)
+
+
 def main():
     parser = argparse.ArgumentParser(description="aureon-agent CLI")
     subparsers = parser.add_subparsers(dest="command")
@@ -274,7 +317,12 @@ def main():
     
     # sessions
     subparsers.add_parser("sessions", help="List all chat sessions")
-    
+
+    # skills
+    p_skills = subparsers.add_parser("skills", help="Doctrine skill management")
+    skills_sub = p_skills.add_subparsers(dest="skills_command")
+    skills_sub.add_parser("list", help="List loaded doctrine skills")
+
     # If no args provided, default to 'start'
     if len(sys.argv) == 1:
         sys.argv.append("start")
@@ -319,6 +367,11 @@ def main():
         cmd_version(args)
     elif args.command == "sessions":
         cmd_sessions(args)
+    elif args.command == "skills":
+        if getattr(args, "skills_command", None) == "list":
+            cmd_skills_list(args)
+        else:
+            print("Usage: aureon-agent skills list")
 
 if __name__ == "__main__":
     main()

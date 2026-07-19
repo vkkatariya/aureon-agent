@@ -6,7 +6,8 @@ import subprocess
 import sys
 import time
 
-from telegram.ext import Application, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
 from channels.base import Channel
 
@@ -39,7 +40,12 @@ SLASH_COMMANDS = {
     "mcp": ["mcp", "list"],
     "cron": ["cron", "list"],
     "logs": ["logs"],
+    "skills": ["skills", "list"],
 }
+
+# /new confirmation inline-keyboard callback payloads (<= 64 bytes, no secrets).
+NEW_CONFIRM = "new_confirm"
+NEW_CANCEL = "new_cancel"
 
 
 class TelegramChannel(Channel):
@@ -56,6 +62,7 @@ class TelegramChannel(Channel):
         # sendMessage-injected /commands); PTB's CommandHandler entity
         # matching was unreliable for API-sent commands.
         self._app.add_handler(MessageHandler(filters.TEXT, self._on_message))
+        self._app.add_handler(CallbackQueryHandler(self._on_callback))
         await self._app.initialize()
         await self._app.start()
         await self._app.updater.start_polling()
@@ -96,6 +103,8 @@ class TelegramChannel(Channel):
         if cmd == "help":
             lines = ["**Available commands:**"] + [
                 f"/{name} — {desc}" for name, desc in [
+                    ("new", "start a new session (clears history)"),
+                    ("skills", "list loaded doctrine skills"),
                     ("sessions", "list all chat sessions"),
                     ("doctor", "health checks"),
                     ("status", "systemd service status"),
@@ -107,6 +116,19 @@ class TelegramChannel(Channel):
                 ]
             ]
             await self.send_message(chat_id, "\n".join(lines))
+            return
+
+        if cmd == "new":
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Yes, start new", callback_data=NEW_CONFIRM),
+                InlineKeyboardButton("❌ No, keep", callback_data=NEW_CANCEL),
+            ]])
+            await self._app.bot.send_message(
+                chat_id=chat_id,
+                text=(f"Start a new session? This clears the current chat history "
+                      f"(telegram:{chat_id}). Cannot be undone."),
+                reply_markup=keyboard,
+            )
             return
 
         cli_args = SLASH_COMMANDS.get(cmd)
@@ -133,6 +155,28 @@ class TelegramChannel(Channel):
         # fences), then fence each chunk independently.
         for chunk in _chunk_for_codeblock(out):
             await self.send_message(chat_id, _md_code_block(chunk), parse_mode="MarkdownV2")
+
+    async def _on_callback(self, update, _context):
+        query = update.callback_query
+        chat_id = str(update.effective_chat.id)
+        if chat_id not in self.allowed_chats:
+            return
+        await query.answer()  # stop the button's loading spinner
+
+        data = query.data
+        if data == NEW_CANCEL:
+            await query.edit_message_text("Kept current history.")
+            return
+        if data != NEW_CONFIRM:
+            logger.warning("telegram._on_callback: unknown callback data %r", data)
+            return
+
+        session_id = f"telegram:{chat_id}"
+        cleared = await self.router.sessions.clear_session(session_id)
+        if cleared:
+            await query.edit_message_text(f"✅ New session started. Cleared {cleared} message(s).")
+        else:
+            await query.edit_message_text("✅ New session — chat already fresh.")
 
     async def _on_message(self, update, _context):
         chat_id = str(update.effective_chat.id)
