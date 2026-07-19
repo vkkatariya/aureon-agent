@@ -71,6 +71,22 @@ class SessionManager:
             )
             await self._db.commit()
 
+    async def clear_session(self, session_id):
+        """Delete all messages for a session (start fresh), keeping the session
+        row with a reset updated_at. Returns the number of messages cleared —
+        0 if the session was already empty or doesn't exist."""
+        async with self._lock_for(session_id):
+            cursor = await self._db.execute(
+                "DELETE FROM messages WHERE session_id = ?", (session_id,)
+            )
+            cleared = cursor.rowcount or 0
+            await self._db.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                (time.time(), session_id),
+            )
+            await self._db.commit()
+            return cleared
+
     async def get_history(self, session_id):
         cursor = await self._db.execute(
             "SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY idx",
