@@ -357,3 +357,28 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - Kickoff: `tasks/kickoff-phase8-context.md`
 - `context_builder.py` — `_load_brain()`, `ContextConfig`, priority trim
 - `agent_runtime.py:352` — `build_system_prompt()` call site
+
+## Phase 10: Interactive TUI agent session (PLANNED — not started)
+
+**Goal:** An interactive terminal UI for aureon-agent (like `claude-code`, `hermes`, `openclaw`) — run in a terminal, chat with the agent live. Inside it: all `/commands` (sessions, doctor, status, cron, mcp, skills, logs, version, help, new) and it **boots as a new session or `/handoff`s an existing Telegram session** (loads that chat's history so the terminal continues the conversation).
+
+**Why:** Captain wants a first-class terminal surface, not just Telegram. The runtime core (`agent_runtime.run`) is already channel-agnostic — Telegram drives it via `router.handle_message`; a TUI drives it directly with a local loop. Reuses `SessionManager`, `SkillLoader`, `ToolRegistry`, existing CLI handlers.
+
+**Kickoff:** `tasks/kickoff-tui-session.md` (written 2026-07-19)
+
+**Design (from kickoff):**
+- `aureon_agent/tui.py` — async REPL using `prompt_toolkit` (`PromptSession`, `enable_history_search`, `await psession.prompt_async()`) with `input()` fallback.
+- Boot modes: default → new `tui:tty` session; `--handoff telegram:723865496` → load that session's history; `--session <id>` → resume a `tui:` session.
+- `/commands` routed same as Telegram (shell out to CLI handlers; `new`/`help` local).
+- `/handoff <id>` live-switches mid-session.
+- Confirmation in TUI = typed yes/no (watches `pending_confirmations`; no Telegram keyboard).
+
+**Pre-reqs / open questions:**
+- Extract `build_runtime()` from `cli.py` if `start()` tightly couples bot boot (TUI + bot share it).
+- `prompt_toolkit` added to `requirements.txt` (pure-python, no native build).
+
+**Status:** ⏳ planned, kickoff done, NOT dispatched yet. Pending Captain sign-off / dispatch.
+
+## 2026-07-18/19 carry-over fixes (DONE, verify DEVLOG)
+
+- Doctor TUI gmail fix (read `GOOGLE_OAUTH_*`), cron name-resolution (`_resolve_job`), rich `/status` (PR #21), `/new` + `/skills` + `skills list` (PR #22), inline-keyboard confirmation (replaces typed-yes loop). See DEVLOG entries below.

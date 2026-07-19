@@ -372,3 +372,44 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 - Authentication via `npm run auth vishal` (or `node ~/.npm-global/lib/node_modules/multi-email-mcp/src/auth.js vishal`) is pending execution from the Captain.
 - Once authenticated, the cached token will be stored in `tokens/vishal.json`, allowing the `live_test_gmail.py` to test connection successfully against the real Gmail API.
 
+## 2026-07-18 — Doctor TUI gmail fix + cron name-resolution (PR #21 prep)
+
+**Branches:** `fix/doctor-gmail-cron-name-res` → merged `dev` `5ad1d75`, `main` `60d2d13` (v0.5.1)
+
+- **Doctor TUI bug:** `check_mcp_servers` reported only `notion, github` (omitted `gmail`). Root cause: read dead `GMAIL_API_CLIENT_ID/SECRET` + `tokens/.oauth`; fixed to read `GOOGLE_OAUTH_CLIENT_ID/SECRET` matching `cli.py`. Now reports 3 servers.
+- **Cron CLI name-resolution:** `cron run/pause/resume/remove/runs` only accepted raw job IDs (e.g. `cron run invoice-weekly` → "not found"). Added `_resolve_job(db, ref)` fallback (match by `name`); all 5 commands use it.
+- Shipped v0.5.1.
+
+## 2026-07-18 — Invoice auto-downloader shipped + systemd timer dropped
+
+- Invoice-pilot built (PR #19/#20), merged to `dev`+`main` (v0.5.1). 3 engines: A `invoice_pilot.py` (broad query `rechnung OR invoice OR facture has:attachment` → 84 valid PDFs), B gmail MCP (patched `download_attachment`), C agent-cron `invoice-weekly`. Total **85 PDFs** in `~/dev-shared/docs/invoices/`.
+- **Decision (Captain):** removed `systemd/aureon-invoice.{service,timer}` — redundant non-agent duplicate; agent-cron `invoice-weekly` is the single recurrence path. Scrubbed from README + invoice doc.
+- Todo stale entries cleaned.
+
+## 2026-07-18/19 — Telegram slash commands + sessions CLI (PR #19/#20 follow-up)
+
+- `SessionManager.list_sessions()` + `aureon-agent sessions` Rich table.
+- Telegram slash commands (`/sessions /doctor /status /cron /mcp /logs /version /help`) routed inside `_on_message` via `startswith("/")` → shell out to CLI. Verified live by Captain.
+- 100 tests pass, ruff clean.
+
+## 2026-07-19 — Rich `/status` + `/new` + `/skills` (PR #21, PR #22)
+
+- **PR #21** (`feat/rich-status-cmd` → `dev` `6e82e6a`): `aureon_agent/status.py` — Rich 5-section status (service/uptime, runtime/model, tokens/context, session, cron+mcp); `gather_status()` never raises (falls back `n/a`). Fixed `doctor` stale `v0.1.0` → `0.5.1`.
+- **Telegram code-block fix:** all `/command` output wrapped in MarkdownV2 fenced code block (fixes table collapse). Uses `parse_mode="MarkdownV2"` + `\`/`` escaping (not naive backticks).
+- **PR #22** (`feat/new-skills-cmds` → `dev` `3506ca1`): `/new` inline-keyboard confirm (✅/❌) via new `CallbackQueryHandler` → `_on_callback`; `/skills` reuses CLI `skills list`; `aureon-agent skills list` Rich table via `SkillLoader` (carries `path`). 123 tests pass.
+- Mental model (`tasks/aureon-agent metal model.md`) refreshed: 57 tools (8 doctrine + 16 inline + 33 MCP), 3 MCP servers, cron scheduler, invoice downloader.
+
+## 2026-07-19 — Inline-keyboard confirmation (fixes OpenClaw-style type-yes loop)
+
+**Branch:** `feat/inline-confirm` → merged `dev` `7f9e551`
+
+- **Bug:** `confirm_with_captain()` waited for a **typed** "yes" reply (resolved via `router.pending_confirmations` future in `router.handle_message`). Same UX trap OpenClaw hit — loops on headless boxes with no GUI "Allow" button.
+- **Fix:** `confirm_with_captain` now sends an **inline Yes/No keyboard** via new `router.send_confirmation()` (Telegram `reply_markup`). `telegram._on_callback` handles `CONFIRM_YES`/`CONFIRM_NO` → resolves the pending future. `_build_confirm_keyboard` helper shared by `/new` + confirm. Typed "yes" kept as fallback. `_resolve_confirm` guarded with `getattr`.
+- Removed stale "mock the logic" comment in `confirm.py`.
+- **Tests:** `tests/test_confirm.py` (5) + telegram slash confirm callbacks (4). **132 tests pass**, ruff clean.
+- Bot restarted; destructive ops now show a tap-to-confirm button in Telegram.
+
+## 2026-07-19 — Phase 10 planned: interactive TUI agent session
+
+- Kickoff `tasks/kickoff-tui-session.md` written. Goal: Claude Code / Hermes / OpenClaw-style terminal REPL with `/commands` + boot as new session or `--handoff telegram:<id>`. Uses `prompt_toolkit` (with `input()` fallback). NOT dispatched yet — pending Captain sign-off.
+
