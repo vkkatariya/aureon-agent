@@ -10,7 +10,7 @@ class SessionManager:
         if os.path.exists(path):
             with open(path) as f:
                 self.sessions = json.load(f)
-            print(f" Restored previous session(s) from disk!")
+            print(" Restored previous session(s) from disk!")
         else:
             self.sessions = {}
 

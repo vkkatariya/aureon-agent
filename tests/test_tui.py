@@ -15,6 +15,7 @@ from aureon_agent import repl
 class FakeAgent:
     def __init__(self):
         self.runs = []
+        self.thinking = False
 
     async def run(self, history, session_id, callbacks):
         self.runs.append({"history": history, "session_id": session_id})

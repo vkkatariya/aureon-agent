@@ -119,9 +119,26 @@ async def _handle_chat(agent, sessions, router, state, line):
     session_id = state["session_id"]
     await sessions.add_message(session_id, "user", line)
     history = await sessions.get_history(session_id)
+    
+    chat_state = {"thinking_started": False, "thinking_ended": False}
+    
+    async def _local_on_thinking(token):
+        if not chat_state["thinking_started"]:
+            sys.stdout.write("\n\033[2m[thinking]\n")
+            chat_state["thinking_started"] = True
+        sys.stdout.write(token)
+        sys.stdout.flush()
+        
+    async def _local_on_token(token):
+        if chat_state["thinking_started"] and not chat_state["thinking_ended"]:
+            sys.stdout.write("\033[0m\n\n")
+            chat_state["thinking_ended"] = True
+        await _on_token_async(token)
+
     callbacks = {
-        "on_token": _on_token_async,
+        "on_token": _local_on_token,
         "on_tool_use": _on_tool_use,
+        "on_thinking": _local_on_thinking,
         "context": {
             "router": router,
             "session_id": session_id,
@@ -241,6 +258,8 @@ async def run_tui(handoff=None, session=None):
 
         _print_banner(state["session_id"])
         psession = _make_prompt_session()
+        thinking_status = "on" if agent.thinking else "off"
+        print(f"[dim]interactive session · MCP tools offline (connect_mcp=False) · thinking: {thinking_status}[/dim]\n")
 
         while True:
             line = await _read_line(psession)
