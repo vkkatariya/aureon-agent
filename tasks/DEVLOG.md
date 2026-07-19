@@ -429,3 +429,19 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 
 - Kickoff `tasks/kickoff-tui-session.md` written. Goal: Claude Code / Hermes / OpenClaw-style terminal REPL with `/commands` + boot as new session or `--handoff telegram:<id>`. Uses `prompt_toolkit` (with `input()` fallback). NOT dispatched yet — pending Captain sign-off.
 
+
+## 2026-07-19 — Interactive TUI agent session SHIPPED (PR #23 -> dev 7c599ee)
+
+**Branch:** `feat/tui-session` → merged `dev` `7c599ee`
+
+- `aureon_agent/repl.py` (NEW, 275 LoC) — async REPL driving the same `agent.run` via `cli.build_runtime()`. Boot modes: default `tui:tty`, `--handoff telegram:723865496` (loads that chat's history), `--session <id>` (resume). Uses `prompt_toolkit` (`PromptSession`, history search) with `input()` fallback.
+- `cli.build_runtime()` extracted from `cli.main()` so bot + TUI share one runtime builder.
+- `/commands` inside TUI: `help`, `new` (typed confirm + `clear_session`), `handoff`, `sessions`, `doctor`, `status`, `cron`, `mcp`, `skills`, `logs`, `version` — shell out to the same CLI handlers as Telegram.
+- `confirm_with_captain` in TUI = typed yes/no watcher (`_confirm_watcher` polls `pending_confirmations`, prompts `input()`) since no Telegram keyboard.
+- **Judgment calls (flagged by agent):** (1) REPL named `repl.py` to avoid clash with existing setup-wizard `tui.py`; (2) **MCP skipped in TUI** (`connect_mcp=False`) — `anyio` teardown crash would hang exit; TUI cannot use gmail/notion/github tools; (3) fixed TUI hang-on-exit via proper `aiosqlite`/`asyncio.run` cleanup.
+- 148 tests pass (16 new: `tests/test_tui.py`), ruff clean, smoke green.
+
+## 2026-07-19 — /sessions status column (option 3 follow-up)
+
+- `SessionManager.list_sessions()` now derives `status` from `updated_at`: `active` (<24h), `idle` (1-7d), `stale` (>7d). `cmd_sessions` Rich table shows a color-coded Status column (green/yellow/dim). Inherited by Telegram `/sessions` + REPL `/sessions`.
+- Reconciles the OpenClaw-style "I see fewer sessions than expected" confusion: aureon lists EVERY row (no silent drop) and now shows freshness at a glance.
