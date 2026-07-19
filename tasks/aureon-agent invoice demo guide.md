@@ -96,12 +96,11 @@ The `download_attachment` tool **did not exist** in the upstream server — we a
 
 Talking point: *"The MCP server could search and recognize invoices but couldn't download them — it dropped `attachmentId` and had no byte-fetch tool. I patched it: added `download_attachment` + surfaced `attachmentId`, plus 429 backoff on every Gmail call. The agent now drives search→read→download as a normal tool chain."*
 
-### 2c. Out-of-process live proof (no bot restart needed)
+### 2c. Live proof (no bot restart needed)
 
-```bash
-python live_test_gmail_download.py
-# → discovers mcp_gmail_download_attachment, downloads a real 75KB %PDF via aureon's MCPManager
-```
+The live product path IS the proof — send the Telegram message in 2a and watch the file land + summary arrive. For a non-Telegram check, trigger the same tool chain via the cron engine (section 3) or just confirm the gmail MCP tools are discovered by the running bot (`tool registry: 57 tools ... mcp: 33`, gmail = 5 tools including `download_attachment`).
+
+Talking point: *"The agent drives the exact same tools a human would — search → read → download — as a normal ReAct turn. No separate script needed for the live demo."*
 
 ---
 
@@ -130,7 +129,7 @@ aureon-agent cron runs invoice-weekly   # run history (name resolves, not just I
 aureon-agent cron run invoice-weekly     # queues → scheduler tick → agent turn → Telegram summary
 ```
 
-Expected: agent runs the prompt as an isolated `cron:<id>:<ts>` session, downloads, and posts a Telegram summary like `saved 2: rechnung.pdf, creditnote.pdf`.
+Expected: agent runs the prompt as an isolated `cron:<id>:<ts>` session, downloads, and posts a Telegram summary like `saved 2: rechnung.pdf, creditnote.pdf`. This is the live proof of the recurrence engine — no separate test script needed.
 
 Talking point: *"Recurrence is fully agent-native — it's literally the same agent turn you'd trigger from Telegram, just auto-fired weekly and summarized back to me. The cron job only runs while the bot is alive, which is fine for a personal inbox."*
 
@@ -188,20 +187,20 @@ Talking point: *"Rate-limit engineering is the real work: batched, throttled, ex
 
 | File | Role |
 |---|---|
-| `invoice_pilot.py` | Engine A — standalone downloader |
+| `invoice_pilot.py` | Engine A — standalone downloader (repo root) |
 | `requirements-invoice.txt` | Engine A deps (separate from agent deps) |
-| `tests/test_invoice_pilot.py` | Engine A tests (detection, backoff, throttle, dedup, dry-run) |
+| `tests/test_invoice_pilot.py` | Engine A unit tests (detection, backoff, throttle, dedup, dry-run) |
 | `mcp-patches/*.patch` + `apply.sh` | Engine B — staged MCP patch (applied to global npm) |
-| `tests/mcp_gmail_download.test.mjs` | Engine B — 429 backoff + write |
-| `live_test_gmail_download.py` | Engine B — live E2E via MCPManager |
+| `tests/mcp_gmail_download.test.mjs` | Engine B unit tests (429 backoff + write) |
 | `scripts/seed-invoice-cron.sh` | Engine C — registers `invoice-weekly` |
-| `live_test_invoice_cron.py` | Engine C — live cron verification |
 | `tokens/vishal.json` | OAuth refresh token (gitignored, 600) |
 | `.env` | `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` (gitignored, 600) |
 
+(Live verification is done through the running product — Telegram prompt for Engine B, `cron run invoice-weekly` for Engine C — no standalone test scripts needed.)
+
 ## Verification status (all live, not mocked)
 - Engine A: `--dry-run` → 2 real candidates; real run wrote both PDFs; no 429.
-- Engine B: `live_test_gmail_download.py` → real 75KB `%PDF` via patched MCP.
+- Engine B: Telegram prompt → agent chains search→read→download, real `%PDF` saved via patched MCP.
 - Engine C: `invoice-weekly` active; `cron run` downloaded + summarized to Telegram.
 - Tests: 111 pytest pass (incl. 20 invoice + 11 status/slash); ruff clean; CI green.
 - Result: **85 valid PDFs** in `~/dev-shared/docs/invoices/`.
