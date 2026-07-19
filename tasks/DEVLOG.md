@@ -3,6 +3,22 @@
 
 ---
 
+## 2026-07-19 — Interactive TUI agent session (local session, branch `feat/tui-session`)
+**Did:** Added a Claude-Code/Hermes-style interactive terminal session — `python -m aureon_agent.__main__ tui` — that chats with the agent live and boots either fresh or by `--handoff`-ing an existing (e.g. Telegram) session.
+**Built:**
+- `aureon_agent/cli.py`: extracted `build_runtime(watch_skills=, connect_mcp=)` from `main()` — the shared memory/sessions/skills/agent/MCP/registry wiring, so the TUI drives the exact same `agent.run` as the bot. `main()` now calls it.
+- `aureon_agent/repl.py` (new): `run_tui(handoff, session)` + `cmd_tui`. Boot modes — default `tui:tty`, `--handoff telegram:723865496` (validated against `list_sessions`, loads that history), `--session <id>`. `prompt_toolkit` input line (history + keybindings) with `input()` fallback on non-TTY/import-fail; tokens stream to stdout. `/commands` reuse the CLI subcommands; `/new` (typed yes/no confirm) → `clear_session`; `/handoff` switches the live session (re-registers a `TuiChannel` under the target's channel prefix); `/help`+`/exit` local. Destructive confirmations (`confirm_with_captain`) resolve via a stdin watcher on `router.pending_confirmations` (no Telegram keyboard in a terminal).
+- `aureon_agent/__main__.py`: `tui` subparser (`--handoff`/`--session`) + dispatch. `requirements.txt`: `prompt_toolkit>=3.0`.
+**Decisions / gotchas:**
+- **Named the module `repl.py`, not `tui.py`** — `aureon_agent/tui.py` already exists (the setup-wizard Rich/Questionary helpers); clobbering it would break `setup`.
+- **TUI skips MCP (`connect_mcp=False`).** The MCP stdio teardown (anyio) can raise `CancelledError`/block on exit, and `wait_for` can't reliably cancel it — a hanging TUI is worse than one without the MCP-backed tools. The TUI still gets the 8 doctrine skills (the core tools). Bot is unaffected (connects MCP as before). Follow-up if MCP-in-TUI is wanted once the client teardown is fixed.
+- **Clean exit required closing the aiosqlite connections** (`sessions` + `memory`): each runs a non-daemon thread that otherwise keeps the interpreter alive after `asyncio.run` returns (the process hung until an earlier `head`/`tail` pipe-close masked it).
+**Verified:** live — `tui` default streams a real agent reply then `/exit` (rc 0); `--handoff telegram:723865496` loads the real chat history; `--handoff <unknown>` errors + rc 1; `/help`, `/version` work. `pytest tests/` 148 passed (16 new in `test_tui.py`: boot modes, handoff load/unknown, `/help`, `/new` confirm+decline, plain-message→agent, typed-confirm watcher). `ruff` clean; `tests/smoke.py` green (bot boot via `build_runtime` intact).
+**Next:** PR to `dev`. Optional: MCP tools in the TUI once `mcp_client` teardown is made cancel-safe.
+**Modified/new:** `aureon_agent/cli.py`, `aureon_agent/repl.py` (new), `aureon_agent/__main__.py`, `requirements.txt`, `tests/test_tui.py` (new), `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-19 — `/new` + `/skills` Telegram commands + `skills list` TUI (local session, branch `feat/new-skills-cmds`)
 **Did:** Added two Telegram slash commands and one CLI subcommand, reusing existing modules (no new storage).
 **Built:**
