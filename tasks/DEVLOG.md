@@ -3,6 +3,19 @@
 
 ---
 
+## 2026-07-19 — `/new` + `/skills` Telegram commands + `skills list` TUI (local session, branch `feat/new-skills-cmds`)
+**Did:** Added two Telegram slash commands and one CLI subcommand, reusing existing modules (no new storage).
+**Built:**
+- `session_manager.py`: `clear_session(session_id)` — `DELETE FROM messages` for the session, reset `updated_at`, keep the session row, return count cleared (0 if empty/missing). Backs `/new`.
+- `skill_loader.py`: skill dict now carries `path` (skill dir); `get_active_skills()` returns `{name, description, path}`.
+- `aureon_agent/__main__.py`: `skills` subparser + `cmd_skills_list` — loads `workspace/skills` (same path `cli.py` boots from), prints a Rich `Skill/Description/Path` table (home dir → `~`), quiets per-skill INFO logs.
+- `channels/telegram.py`: `/new` special-case sends an `InlineKeyboardMarkup` (`✅ Yes` / `❌ No`) with an undo-warning; a new `CallbackQueryHandler` → `_on_callback` (allowlist-checked; answers the callback; `new_confirm` → `clear_session("telegram:<id>")` then edits to a confirmation; `new_cancel` → "Kept current history"; foreign/unknown callbacks ignored + logged). `/skills` → `SLASH_COMMANDS["skills"]=["skills","list"]`, reusing the CLI path + MarkdownV2 code-block wrap. Help list updated.
+**Verified:** `aureon-agent skills list` prints all 8 doctrine skills (name+desc+path). `pytest tests/` 123 passed (new: `test_skills_cmd.py`; extended `test_sessions_cmd.py` with clear_session incl. missing-session; `test_telegram_slash.py` with `/new` keyboard + confirm/cancel/empty/foreign-chat/unknown-data callbacks). `ruff` clean. No secrets in any output (skills = name/desc/path; callback data is static sentinels).
+**Next:** PR to `dev`. Captain: restart bot to load the new `/new`+`/skills` handlers (CallbackQueryHandler is registered in `start()`).
+**Modified/new:** `session_manager.py`, `skill_loader.py`, `aureon_agent/__main__.py`, `channels/telegram.py`, `tests/test_sessions_cmd.py`, `tests/test_telegram_slash.py`, `tests/test_skills_cmd.py` (new), `tasks/kickoff-telegram-new-skills-cmds.md` (new), `tasks/DEVLOG.md` (this entry).
+
+---
+
 ## 2026-07-18 — Rich `/status` + Telegram code-block wrap + version fix (local session, branch `feat/rich-status-cmd`)
 **Did:** Rewrote the thin `/status` (was just `systemctl status`) into a rich multi-section block mirroring the OpenClaw/Hermes status pages; fixed the Telegram table-breaking bug for all `/` commands; fixed the stale version header.
 **Built:**
