@@ -129,18 +129,17 @@ async def _start_health_server():
     return runner
 
 
-async def main():
-    # PID lock — prevent two instances on the same workspace.
-    existing = acquire_lock()
-    if existing:
-        logger.error(
-            "another aureon-agent is already running (pid %s). "
-            "If that's stale, remove ~/.cache/aureon-agent.pid and retry.",
-            existing,
-        )
-        sys.exit(1)
+async def build_runtime(*, watch_skills=True, connect_mcp=True):
+    """Wire the shared agent runtime (memory, sessions, skills, MCP, registry).
 
-    logger.info("aureon-agent starting up")
+    Reused by the bot (`main`) and the interactive TUI (`repl`) so both drive the
+    exact same `agent.run`. Does not touch channels, cron, PID lock, or signals.
+    Returns a dict of the built components.
+
+    `connect_mcp=False` skips spawning the MCP stdio servers — the TUI uses this
+    for a fast boot + clean exit (the anyio stdio teardown can block); it still
+    gets the doctrine skills, just not the MCP-backed tools.
+    """
     os.makedirs(DATA_DIR, exist_ok=True)
 
     memory = Memory(os.path.join(DATA_DIR, "memory.db"))
@@ -151,7 +150,7 @@ async def main():
 
     skills = SkillLoader(os.path.join(WORKSPACE_DIR, "skills"))
     await skills.load()
-    reload_task = asyncio.create_task(skills.watch())
+    reload_task = asyncio.create_task(skills.watch()) if watch_skills else None
 
     agent = AgentRuntime(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
@@ -171,12 +170,12 @@ async def main():
     mcp_manager = MCPManager()
 
     # Connect configured MCP servers (fail soft — log warning, continue without)
-    mcp_servers = _parse_mcp_servers()
-    for server_cfg in mcp_servers:
-        ok = await mcp_manager.add_server(**server_cfg)
-        if ok:
-            logger.info("MCP server '%s' connected (%d tools)",
-                        server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
+    if connect_mcp:
+        for server_cfg in _parse_mcp_servers():
+            ok = await mcp_manager.add_server(**server_cfg)
+            if ok:
+                logger.info("MCP server '%s' connected (%d tools)",
+                            server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
 
     # ── Tool registry ─────────────────────────────────────────────
     registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)
@@ -184,6 +183,33 @@ async def main():
     logger.info("tool registry: %d tools (%s)",
                 registry.tool_count,
                 ", ".join(f"{k}: {len(v)}" for k, v in registry.list_tools_by_backend().items() if v))
+
+    return {
+        "memory": memory, "sessions": sessions, "skills": skills,
+        "agent": agent, "mcp_manager": mcp_manager, "registry": registry,
+        "reload_task": reload_task,
+    }
+
+
+async def main():
+    # PID lock — prevent two instances on the same workspace.
+    existing = acquire_lock()
+    if existing:
+        logger.error(
+            "another aureon-agent is already running (pid %s). "
+            "If that's stale, remove ~/.cache/aureon-agent.pid and retry.",
+            existing,
+        )
+        sys.exit(1)
+
+    logger.info("aureon-agent starting up")
+
+    rt = await build_runtime()
+    memory = rt["memory"]
+    sessions = rt["sessions"]
+    agent = rt["agent"]
+    mcp_manager = rt["mcp_manager"]
+    reload_task = rt["reload_task"]
 
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
 
