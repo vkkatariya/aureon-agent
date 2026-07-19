@@ -15,6 +15,7 @@ from aureon_agent import repl
 class FakeAgent:
     def __init__(self):
         self.runs = []
+        self.model = "fake-model-v1"
 
     async def run(self, history, session_id, callbacks):
         self.runs.append({"history": history, "session_id": session_id})
@@ -63,10 +64,21 @@ class _FakeMemory:
         pass
 
 
+class _FakeSkills:
+    @property
+    def skills(self):
+        return ["fake-skill"]
+
+
+class _FakeRegistry:
+    def get_all(self):
+        return ["fake-tool1", "fake-tool2"]
+
+
 def _patch_runtime(monkeypatch, agent, sessions):
     async def fake_build(*_a, **_k):
         return {"agent": agent, "sessions": sessions, "mcp_manager": _FakeMcp(),
-                "memory": _FakeMemory(), "skills": None, "registry": None,
+                "memory": _FakeMemory(), "skills": _FakeSkills(), "registry": _FakeRegistry(),
                 "reload_task": None}
     monkeypatch.setattr("aureon_agent.cli.build_runtime", fake_build)
 
@@ -82,7 +94,7 @@ def _script_input(monkeypatch, lines):
 
 # --- boot modes ----------------------------------------------------------
 
-def test_default_creates_tui_session(monkeypatch):
+def test_default_creates_tui_session(monkeypatch, capsys):
     agent, sessions = FakeAgent(), FakeSessions()
     _patch_runtime(monkeypatch, agent, sessions)
     _script_input(monkeypatch, ["/exit"])
@@ -91,6 +103,11 @@ def test_default_creates_tui_session(monkeypatch):
     assert rc == 0
     assert sessions.created == ["tui:tty"]
     assert sessions.closed
+    
+    out = capsys.readouterr().out
+    assert "aureon-agent" in out
+    assert "session" in out
+    assert "tui:tty" in out
 
 
 def test_handoff_loads_history(monkeypatch):
