@@ -323,6 +323,11 @@ def main():
     skills_sub = p_skills.add_subparsers(dest="skills_command")
     skills_sub.add_parser("list", help="List loaded doctrine skills")
 
+    # tui (interactive terminal session)
+    p_tui = subparsers.add_parser("tui", help="Interactive terminal agent session")
+    p_tui.add_argument("--handoff", help="Continue an existing session (e.g. telegram:723865496)")
+    p_tui.add_argument("--session", help="Resume a specific tui session id")
+
     # If no args provided, default to 'start'
     if len(sys.argv) == 1:
         sys.argv.append("start")
@@ -372,6 +377,9 @@ def main():
             cmd_skills_list(args)
         else:
             print("Usage: aureon-agent skills list")
+    elif args.command == "tui":
+        from aureon_agent.repl import cmd_tui
+        sys.exit(cmd_tui(args))
 
 if __name__ == "__main__":
     main()
