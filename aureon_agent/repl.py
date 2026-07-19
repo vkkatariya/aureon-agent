@@ -32,20 +32,7 @@ SHELL_COMMANDS = {
     "skills": ["skills", "list"],
 }
 
-HELP = """Commands:
-  /help              this message
-  /new               start a fresh session (clears current history)
-  /handoff <id>      continue another session (e.g. telegram:723865496)
-  /sessions          list all chat sessions
-  /skills            list loaded doctrine skills
-  /status            agent status
-  /doctor            health checks
-  /mcp               MCP servers + tools
-  /cron              cron jobs
-  /logs              recent bot logs
-  /version           agent version
-  /exit              save + quit
-Anything not starting with / is sent to the agent."""
+
 
 
 class TuiChannel(Channel):
@@ -162,7 +149,7 @@ async def _set_session(router, state, session_id):
     state.update(session_id=session_id, channel_name=channel_name, client_id=client_id)
 
 
-async def _handle_command(line, agent, sessions, router, state):
+async def _handle_command(line, agent, sessions, router, state, rt):
     """Return "__exit__" to quit, else None."""
     parts = line[1:].split()
     cmd = parts[0].lower() if parts else ""
@@ -171,7 +158,7 @@ async def _handle_command(line, agent, sessions, router, state):
     if cmd in ("exit", "quit"):
         return "__exit__"
     if cmd == "help" or cmd == "":
-        print(HELP)
+        _print_help(rt)
         return None
     if cmd == "new":
         ans = await asyncio.to_thread(
@@ -203,10 +190,64 @@ async def _handle_command(line, agent, sessions, router, state):
     return None
 
 
-def _print_banner(session_id):
-    print(f"aureon-agent v{__version__} — interactive session")
-    print(f"session: {session_id}")
-    print("type /help for commands, /exit to quit\n")
+def _print_help(rt=None):
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_row("[bold]/help[/bold]", "this message")
+    table.add_row("[bold]/new[/bold]", "start a fresh session (clears current history)")
+    table.add_row("[bold]/handoff <id>[/bold]", "continue another session (e.g. telegram:723865496)")
+    table.add_row("[bold]/sessions[/bold]", "list all chat sessions")
+    table.add_row("[bold]/skills[/bold]", "list loaded doctrine skills")
+    table.add_row("[bold]/status[/bold]", "agent status")
+    table.add_row("[bold]/doctor[/bold]", "health checks")
+    table.add_row("[bold]/mcp[/bold]", "MCP servers + tools")
+    table.add_row("[bold]/cron[/bold]", "cron jobs")
+    table.add_row("[bold]/logs[/bold]", "recent bot logs")
+    table.add_row("[bold]/version[/bold]", "agent version")
+    table.add_row("[bold]/exit[/bold]", "save + quit")
+    
+    footer = "Anything not starting with / is sent to the agent."
+    if rt:
+        tools = rt["registry"].get_all()
+        skills = rt["skills"].skills
+        footer = f"{len(tools)} tools · {len(skills)} doctrine skills · {footer}"
+
+    panel = Panel(table, title="Commands", title_align="left", subtitle=footer, subtitle_align="left")
+    console.print(panel)
+
+
+def _print_banner(rt, session_id):
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    import os
+
+    console = Console()
+    agent = rt["agent"]
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_row("[dim]model[/dim]", agent.model)
+    profile = os.getenv("USER_PROFILE", "Captain (Nous)")
+    table.add_row("[dim]profile[/dim]", profile)
+    table.add_row("[dim]cwd[/dim]", os.getcwd())
+    table.add_row("[dim]session[/dim]", session_id)
+
+    title = Text.assemble(("aureon-agent", "bold"), (" v", "dim"), (f"{__version__}", "dim"))
+    
+    panel = Panel(
+        table,
+        title=title,
+        title_align="left",
+        subtitle="type a message to chat · /handoff <id> to continue a chat · /help for commands",
+        subtitle_align="left"
+    )
+    console.print(panel)
+    console.print("[dim]interactive session · MCP tools offline (connect_mcp=False)[/dim]\n")
 
 
 async def run_tui(handoff=None, session=None):
@@ -239,7 +280,7 @@ async def run_tui(handoff=None, session=None):
             session_id = await sessions.get_or_create_session("tty", "tui")
             await _set_session(router, state, session_id)
 
-        _print_banner(state["session_id"])
+        _print_banner(rt, state["session_id"])
         psession = _make_prompt_session()
 
         while True:
@@ -250,7 +291,7 @@ async def run_tui(handoff=None, session=None):
             if not line:
                 continue
             if line.startswith("/"):
-                if await _handle_command(line, agent, sessions, router, state) == "__exit__":
+                if await _handle_command(line, agent, sessions, router, state, rt) == "__exit__":
                     break
             else:
                 await _handle_chat(agent, sessions, router, state, line)
