@@ -2,6 +2,21 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-07-20 — TUI polished chrome (lighter Claude/Hermes style)
+**Did:** Upgraded the interactive TUI (`aureon_agent/repl.py`) with a polished Rich banner and `/help` menu, matching Claude Code / Hermes aesthetics but lighter (no new dependencies, Rich-only, no pixel art).
+
+**Built:**
+- **Rich banner (`_print_banner`):** Replaced plain `print()` with a `rich.panel.Panel` and `rich.table.Table`. Shows `model`, `profile` (`USER_PROFILE` env with "Captain (Nous)" fallback), `cwd`, and `session`. Added a feature announcement line ("interactive session · MCP tools offline").
+- **Polished `/help` (`_print_help`):** Replaced the static multi-line `HELP` string with a `rich.table.Table` mapping commands to descriptions. Added a dynamic capabilities footer ("24 tools · 8 doctrine skills · ...") powered by the agent's runtime registry and skills.
+- **Tests (`tests/test_tui.py`):** Extended `FakeAgent` with `.model` and added mock skills/registry properties. `test_default_creates_tui_session` now captures standard output using `capsys` and asserts the presence of the banner's key strings (`aureon-agent`, `session`, `tui:tty`).
+
+**Verified:**
+- `pytest tests/test_tui.py` passed (16 tests).
+- `pytest tests/` passed (148 tests).
+- `ruff check` on modified files is clean.
+- Manual visual test (`python -m aureon_agent.__main__ tui` via script) rendered a beautiful Rich panel that naturally truncated the subtitle to fit the terminal width, displaying the exact information parity requested.
+
+**Modified:** `aureon_agent/repl.py`, `tests/test_tui.py`.
 
 ## 2026-07-19 — Interactive TUI agent session (local session, branch `feat/tui-session`)
 **Did:** Added a Claude-Code/Hermes-style interactive terminal session — `python -m aureon_agent.__main__ tui` — that chats with the agent live and boots either fresh or by `--handoff`-ing an existing (e.g. Telegram) session.
@@ -445,3 +460,4 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 
 - `SessionManager.list_sessions()` now derives `status` from `updated_at`: `active` (<24h), `idle` (1-7d), `stale` (>7d). `cmd_sessions` Rich table shows a color-coded Status column (green/yellow/dim). Inherited by Telegram `/sessions` + REPL `/sessions`.
 - Reconciles the OpenClaw-style "I see fewer sessions than expected" confusion: aureon lists EVERY row (no silent drop) and now shows freshness at a glance.
+
