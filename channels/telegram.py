@@ -47,6 +47,18 @@ SLASH_COMMANDS = {
 NEW_CONFIRM = "new_confirm"
 NEW_CANCEL = "new_cancel"
 
+# confirm_with_captain() inline-keyboard callback payloads (<= 64 bytes, no secrets).
+CONFIRM_YES = "confirm_yes"
+CONFIRM_NO = "confirm_no"
+
+
+def _build_confirm_keyboard(confirm_text, cancel_text, confirm_data, cancel_data):
+    """Inline Yes/No keyboard shared by /new and confirm_with_captain."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(confirm_text, callback_data=confirm_data),
+        InlineKeyboardButton(cancel_text, callback_data=cancel_data),
+    ]])
+
 
 class TelegramChannel(Channel):
     def __init__(self, token, router, allowed_chats):
@@ -74,8 +86,10 @@ class TelegramChannel(Channel):
         await self._app.stop()
         await self._app.shutdown()
 
-    async def send_message(self, chat_id, text, parse_mode=None):
-        return await self._app.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
+        return await self._app.bot.send_message(
+            chat_id=chat_id, text=text, parse_mode=parse_mode, reply_markup=reply_markup,
+        )
 
     async def edit_message(self, chat_id, message_id, text):
         text_to_send = text or "…"
@@ -119,10 +133,9 @@ class TelegramChannel(Channel):
             return
 
         if cmd == "new":
-            keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Yes, start new", callback_data=NEW_CONFIRM),
-                InlineKeyboardButton("❌ No, keep", callback_data=NEW_CANCEL),
-            ]])
+            keyboard = _build_confirm_keyboard(
+                "✅ Yes, start new", "❌ No, keep", NEW_CONFIRM, NEW_CANCEL,
+            )
             await self._app.bot.send_message(
                 chat_id=chat_id,
                 text=(f"Start a new session? This clears the current chat history "
@@ -167,6 +180,14 @@ class TelegramChannel(Channel):
         if data == NEW_CANCEL:
             await query.edit_message_text("Kept current history.")
             return
+        if data == CONFIRM_NO:
+            await query.edit_message_text("❌ Cancelled.")
+            self._resolve_confirm(chat_id, "no")
+            return
+        if data == CONFIRM_YES:
+            await query.edit_message_text("✅ Confirmed.")
+            self._resolve_confirm(chat_id, "yes")
+            return
         if data != NEW_CONFIRM:
             logger.warning("telegram._on_callback: unknown callback data %r", data)
             return
@@ -177,6 +198,17 @@ class TelegramChannel(Channel):
             await query.edit_message_text(f"✅ New session started. Cleared {cleared} message(s).")
         else:
             await query.edit_message_text("✅ New session — chat already fresh.")
+
+    def _resolve_confirm(self, chat_id, result):
+        """Resolve a pending confirm_with_captain future for this chat (if any)."""
+        session_id = f"telegram:{chat_id}"
+        router = self.router
+        pending = getattr(router, "pending_confirmations", None)
+        if not pending:
+            return
+        future = pending.get(session_id)
+        if future and not future.done():
+            future.set_result(result)
 
     async def _on_message(self, update, _context):
         chat_id = str(update.effective_chat.id)

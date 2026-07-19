@@ -179,3 +179,74 @@ def test_callback_unknown_data_ignored():
     asyncio.run(ch._on_callback(upd, None))
     assert sessions.called_with is None
     assert upd.callback_query.edited is None
+
+
+# --- confirm_with_captain inline-keyboard callbacks ----------------------
+
+def test_confirm_yes_resolves_pending_future():
+    from channels.telegram import CONFIRM_YES
+
+    async def _run():
+        router = _FakeRouter(_FakeSessions(0))
+        router.pending_confirmations = {}
+        ch = _channel(sessions=router.sessions, allowed=("723865496",))
+        ch.router = router
+        fut = asyncio.Future()
+        router.pending_confirmations["telegram:723865496"] = fut
+        upd = _CbUpdate(723865496, CONFIRM_YES)
+        await ch._on_callback(upd, None)
+        return fut, upd
+
+    fut, upd = asyncio.run(_run())
+    assert fut.done()
+    assert fut.result() == "yes"
+    assert "✅ Confirmed." in upd.callback_query.edited
+
+
+def test_confirm_no_resolves_pending_future():
+    from channels.telegram import CONFIRM_NO
+
+    async def _run():
+        router = _FakeRouter(_FakeSessions(0))
+        router.pending_confirmations = {}
+        ch = _channel(sessions=router.sessions, allowed=("723865496",))
+        ch.router = router
+        fut = asyncio.Future()
+        router.pending_confirmations["telegram:723865496"] = fut
+        upd = _CbUpdate(723865496, CONFIRM_NO)
+        await ch._on_callback(upd, None)
+        return fut, upd
+
+    fut, upd = asyncio.run(_run())
+    assert fut.done()
+    assert fut.result() == "no"
+    assert "❌ Cancelled." in upd.callback_query.edited
+
+
+def test_confirm_callback_no_pending_future_is_safe():
+    from channels.telegram import CONFIRM_YES
+    ch = _channel(sessions=_FakeSessions(0))
+    # _FakeRouter has no pending_confirmations attr -> _resolve_confirm no-ops
+    upd = _CbUpdate(723865496, CONFIRM_YES)
+    asyncio.run(ch._on_callback(upd, None))
+    assert "✅ Confirmed." in upd.callback_query.edited  # still edits the message
+
+
+def test_confirm_callback_from_non_allowed_chat_ignored():
+    from channels.telegram import CONFIRM_YES
+
+    async def _run():
+        router = _FakeRouter(_FakeSessions(0))
+        router.pending_confirmations = {}
+        ch = _channel(sessions=router.sessions, allowed=("723865496",))
+        ch.router = router
+        fut = asyncio.Future()
+        router.pending_confirmations["telegram:723865496"] = fut
+        upd = _CbUpdate(999999, CONFIRM_YES)  # not in allowlist
+        await ch._on_callback(upd, None)
+        return fut, upd
+
+    fut, upd = asyncio.run(_run())
+    assert not fut.done()
+    assert upd.callback_query.edited is None
+

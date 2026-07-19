@@ -37,6 +37,27 @@ class ChannelRouter:
         else:
             logger.error("Channel %s not found for send_message", channel_name)
 
+    async def send_confirmation(self, session_id, text, confirm_data, cancel_data):
+        """Send a confirmation prompt with an inline Yes/No keyboard.
+
+        Routes through the channel's send_message (which forwards reply_markup
+        to Telegram). Falls back to plain text on channels that ignore markup.
+        """
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        if ":" not in session_id:
+            logger.error("Invalid session_id format: %s", session_id)
+            return
+        channel_name, client_id = session_id.split(":", 1)
+        if channel_name not in self.channels:
+            logger.error("Channel %s not found for send_confirmation", channel_name)
+            return
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Yes", callback_data=confirm_data),
+            InlineKeyboardButton("❌ No", callback_data=cancel_data),
+        ]])
+        await self.channels[channel_name].send_message(client_id, text, reply_markup=keyboard)
+
     async def handle_message(self, channel_name, client_id, text, callbacks):
         session_id = await self.sessions.get_or_create_session(client_id, channel_name)
         
