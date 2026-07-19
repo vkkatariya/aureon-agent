@@ -76,6 +76,7 @@ class SkillLoader:
         return {
             "name": name,
             "description": description,
+            "path": skill_dir,
             "always": bool(frontmatter.get("always", False)),
             "user_invocable": bool(frontmatter.get("user-invocable", True)),
             "metadata": frontmatter.get("metadata"),
@@ -96,7 +97,8 @@ class SkillLoader:
         return frontmatter, body.strip()
 
     def get_active_skills(self):
-        return [{"name": s["name"], "description": s["description"]} for s in self.skills.values()]
+        return [{"name": s["name"], "description": s["description"], "path": s.get("path", "")}
+                for s in self.skills.values()]
 
     def get_tools(self):
         tools = []
