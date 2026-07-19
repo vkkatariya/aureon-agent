@@ -16,6 +16,7 @@ class FakeAgent:
     def __init__(self):
         self.runs = []
         self.model = "fake-model-v1"
+        self.thinking = False
 
     async def run(self, history, session_id, callbacks):
         self.runs.append({"history": history, "session_id": session_id})

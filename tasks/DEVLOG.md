@@ -461,3 +461,15 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 - `SessionManager.list_sessions()` now derives `status` from `updated_at`: `active` (<24h), `idle` (1-7d), `stale` (>7d). `cmd_sessions` Rich table shows a color-coded Status column (green/yellow/dim). Inherited by Telegram `/sessions` + REPL `/sessions`.
 - Reconciles the OpenClaw-style "I see fewer sessions than expected" confusion: aureon lists EVERY row (no silent drop) and now shows freshness at a glance.
 
+## 2026-07-20 — Thinking mode (reasoning tokens)
+**Did:** Implemented config-flagged thinking mode for the agent.
+
+**Built:**
+- `AUREON_THINKING` and `AUREON_THINKING_BUDGET` in `cli.py`.
+- `_thinking_field` in `agent_runtime.py` injects provider-correct body fragment (`reasoning_effort` for DeepSeek/Qwen, `thinking` for Claude/Gemma).
+- Extracted reasoning tokens (`reasoning_content`, `reasoning`, or `thinking`) via `_stream` into a separate callback `on_thinking`.
+- `repl.py` TUI now streams reasoning to a dim `[thinking]` block, hiding it seamlessly when standard content starts, and the banner reflects thinking status.
+- Tests written in `tests/test_thinking.py` using `unittest.IsolatedAsyncioTestCase`, mocking the SSE stream to verify payload injection and reasoning capture.
+
+**Modified:** `aureon_agent/cli.py`, `agent_runtime.py`, `aureon_agent/repl.py`, `tests/test_tui.py`.
+**Added:** `tests/test_thinking.py`.

@@ -152,6 +152,12 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
     await skills.load()
     reload_task = asyncio.create_task(skills.watch()) if watch_skills else None
 
+    thinking_env = os.getenv("AUREON_THINKING", "false").lower() == "true"
+    try:
+        thinking_budget = int(os.getenv("AUREON_THINKING_BUDGET", "1024"))
+    except ValueError:
+        thinking_budget = 1024
+
     agent = AgentRuntime(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
         api_key=os.getenv("OLLAMA_API_KEY"),
@@ -161,6 +167,8 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
         memory=memory,
         fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1"),
         fallback_api_key=os.getenv("OLLAMA_API_KEY"),
+        thinking=thinking_env,
+        thinking_budget=thinking_budget,
     )
 
     # ── MCP servers ───────────────────────────────────────────────

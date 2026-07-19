@@ -229,7 +229,7 @@ INLINE_TOOL_SCHEMAS = [
 class AgentRuntime:
     def __init__(self, base_url, api_key, model, skill_loader, workspace_dir, memory,
                  fallback_base_url=None, fallback_api_key=None,
-                 tool_registry=None):
+                 tool_registry=None, thinking=False, thinking_budget=1024):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
@@ -239,6 +239,8 @@ class AgentRuntime:
         self.fallback_base_url = fallback_base_url.rstrip("/") if fallback_base_url else None
         self.fallback_api_key = fallback_api_key
         self.registry = tool_registry
+        self.thinking = thinking
+        self.thinking_budget = thinking_budget
 
     def setup_registry(self, registry):
         """Set the tool registry and register all inline tools.
@@ -342,6 +344,7 @@ class AgentRuntime:
     async def run(self, history, session_id, callbacks):
         on_token = callbacks.get("on_token")
         on_tool_use = callbacks.get("on_tool_use")
+        on_thinking = callbacks.get("on_thinking")
 
         last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
@@ -369,7 +372,7 @@ class AgentRuntime:
         rounds = 0
         while rounds < MAX_TOOL_ROUNDS:
             rounds += 1
-            result = await self._call_llm(system_prompt, messages, tools, on_token)
+            result = await self._call_llm(system_prompt, messages, tools, on_token, on_thinking=on_thinking)
 
             if not result.get("text") and not result.get("tool_calls"):
                 logger.warning("agent.run: LLM returned EMPTY response on round %d — last_user=%r", rounds, messages[-1].get("content", "")[:100] if messages else "")
@@ -559,12 +562,21 @@ class AgentRuntime:
 
     # ── LLM communication ──────────────────────────────────────────
 
-    async def _call_llm(self, system_prompt, messages, tools, on_token):
+    def _thinking_field(self):
+        m = self.model.lower()
+        if m.startswith("deepseek") or m.startswith("qwen"):
+            return {"reasoning_effort": "high"}
+        return {"thinking": {"type": "enabled", "budget_tokens": self.thinking_budget}}
+
+    async def _call_llm(self, system_prompt, messages, tools, on_token, on_thinking=None):
         body = {
             "model": self.model,
             "messages": [{"role": "system", "content": system_prompt}] + messages,
             "stream": True,
         }
+        if self.thinking:
+            body.update(self._thinking_field())
+            
         if tools:
             body["tools"] = [{
                 "type": "function",
@@ -576,19 +588,20 @@ class AgentRuntime:
             } for t in tools]
 
         try:
-            return await self._stream(self.base_url, self.api_key, body, on_token)
+            return await self._stream(self.base_url, self.api_key, body, on_token, on_thinking=on_thinking)
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             if not self.fallback_base_url:
                 raise Exception(f"Ollama request failed: {e}") from e
             logger.warning("primary Ollama endpoint failed (%s), falling back to %s", e, self.fallback_base_url)
-            return await self._stream(self.fallback_base_url, self.fallback_api_key, body, on_token)
+            return await self._stream(self.fallback_base_url, self.fallback_api_key, body, on_token, on_thinking=on_thinking)
 
-    async def _stream(self, base_url, api_key, body, on_token):
+    async def _stream(self, base_url, api_key, body, on_token, on_thinking=None):
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
         text_parts = []
+        thinking_parts = []
         tool_calls = {}
 
         async with httpx.AsyncClient(timeout=120) as client:
@@ -607,6 +620,12 @@ class AgentRuntime:
                         break
                     chunk = json.loads(payload)
                     delta = chunk["choices"][0].get("delta", {})
+
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thinking")
+                    if reasoning:
+                        thinking_parts.append(reasoning)
+                        if on_thinking:
+                            await on_thinking(reasoning)
 
                     if delta.get("content"):
                         text_parts.append(delta["content"])
