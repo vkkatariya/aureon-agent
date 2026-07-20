@@ -158,6 +158,13 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
     except ValueError:
         thinking_budget = 1024
 
+    # Only enable the cloud fallback when BOTH a URL and a key are present.
+    # An unauthenticated cloud fallback (key empty) yields 401 on every blip
+    # of the local endpoint — better to fail loud than fail to a dead fallback.
+    _cloud_url = os.getenv("OLLAMA_CLOUD_BASE_URL")
+    _cloud_key = os.getenv("OLLAMA_API_KEY")
+    _fallback_base = _cloud_url if (_cloud_url and _cloud_key) else None
+
     agent = AgentRuntime(
         base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
         api_key=os.getenv("OLLAMA_API_KEY"),
@@ -165,8 +172,8 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
         skill_loader=skills,
         workspace_dir=WORKSPACE_DIR,
         memory=memory,
-        fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1"),
-        fallback_api_key=os.getenv("OLLAMA_API_KEY"),
+        fallback_base_url=_fallback_base,
+        fallback_api_key=_cloud_key,
         thinking=thinking_env,
         thinking_budget=thinking_budget,
     )

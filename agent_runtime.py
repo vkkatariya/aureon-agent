@@ -18,6 +18,59 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 5
 
+
+def _parse_tool_args(raw: "str | None") -> dict:
+    """Parse a tool-call arguments string into a dict.
+
+    Models (esp. gemma) sometimes append prose after the JSON, or wrap the
+    JSON in code fences. A naive json.loads() then raises
+    'Extra data: line 1 column N'. We strip fences and extract the FIRST
+    balanced JSON object/array so a trailing sentence doesn't nuke the call.
+    """
+    if not raw:
+        return {}
+    s = raw.strip()
+    # strip ```json ... ``` fences
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\s*", "", s)
+        s = re.sub(r"\s*```$", "", s)
+        s = s.strip()
+    # find first balanced { } or [ ]
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        start = s.find(open_ch)
+        if start == -1:
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(s)):
+            c = s[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            else:
+                if c == '"':
+                    in_str = True
+                elif c == open_ch:
+                    depth += 1
+                elif c == close_ch:
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(s[start:i + 1])
+                        except json.JSONDecodeError:
+                            break
+    # fall back to the whole string
+    s = s.strip()
+    if not s or s[0] not in "{[":
+        return {}
+    return json.loads(s)
+
+
 _DESTRUCTIVE_RE = re.compile(
     r"rm\s+-rf|drop\s+table|force[\s-]push|push\s+--force|git\s+reset\s+--hard|truncate\b|mkfs\b",
     re.IGNORECASE,
@@ -384,7 +437,7 @@ class AgentRuntime:
                     "tool_calls": result["tool_calls"],
                 })
                 for call in result["tool_calls"]:
-                    args = json.loads(call["function"]["arguments"] or "{}")
+                    args = _parse_tool_args(call["function"]["arguments"])
                     if on_tool_use:
                         await on_tool_use(call["function"]["name"], args)
 
