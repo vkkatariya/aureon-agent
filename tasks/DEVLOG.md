@@ -473,3 +473,20 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 
 **Modified:** `aureon_agent/cli.py`, `agent_runtime.py`, `aureon_agent/repl.py`, `tests/test_tui.py`.
 **Added:** `tests/test_thinking.py`.
+
+## 2026-07-20 — Cron job failures investigated + fixed (invoice-weekly 401, homelab-health-daily JSON)
+
+**Reported (Discord):** `invoice-weekly` intermittently `Ollama API error (401): Unauthorized`; `homelab-health-daily` `Extra data: line 1 column 31 (char 30)` JSON parse crash.
+
+**Root causes (verified from cron_jobs.db run history):**
+1. **401** — `cli.build_runtime` set `fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1")` with `fallback_api_key=os.getenv("OLLAMA_API_KEY")` which is EMPTY. Local Ollama (`http://127.0.0.1:11434/v1`, no auth, returns 200) briefly blipped at 09:03 → agent fell back to cloud unauthenticated → 401. At 09:04/09:05 local was back, so those runs succeeded.
+2. **Extra data** — gemma4 emits tool-call arguments with trailing prose (e.g. `{"query":"..."} and then some text`). `agent.run` did `json.loads(call["function"]["arguments"])` → raised on the trailing text. The `homelab-health` skill itself is just SKILL.md (no script); the crash is in aureon's own tool-arg parsing.
+
+**Fixes:**
+- `cli.py`: cloud fallback only enabled when BOTH `OLLAMA_CLOUD_BASE_URL` AND `OLLAMA_API_KEY` are set; otherwise `fallback_base_url=None`. No more silent unauthenticated cloud 401 on local blips.
+- `agent_runtime.py`: new `_parse_tool_args()` — strips ```json fences, extracts the FIRST balanced JSON object/array, ignores any trailing prose. Used at the tool-call dispatch site (replaces naive `json.loads`). Returns `{}` on empty/non-JSON input (no crash).
+- `tests/test_parse_tool_args.py`: 7 cases (plain, trailing prose, fences, arrays, nested, string-with-brace, empty/None).
+
+**Verified:** `python -m pytest tests/` = 159 passed (was 152), ruff clean. Fallback logic unit-checked (empty key → None; with key → cloud URL). Bot restarted (PID 515335, Application started).
+
+**Note:** Both jobs now recover on their own — invoice-weekly next Mon 09:00, homelab-health-daily next 08:00. No manual re-run needed.
