@@ -7,13 +7,6 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ tiny-openclaw (vendored reference, 8 files, 330 LoC)           │
-│ • Anthropic-only, JSON file storage                              │
-│ • No streaming, no skills, no doctrine, no subagent             │
-│ • No MCP, no cron, no plan-node                                 │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓  vendored at references/tiny-openclaw/
-┌─────────────────────────────────────────────────────────────────┐
 │ aureon-agent (production, 2000+ LoC, 11+ modules)                │
 │                                                                  │
 │  Channels (interface layer)  ← channels/                        │
