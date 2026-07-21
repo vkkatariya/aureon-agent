@@ -490,3 +490,15 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 **Verified:** `python -m pytest tests/` = 159 passed (was 152), ruff clean. Fallback logic unit-checked (empty key → None; with key → cloud URL). Bot restarted (PID 515335, Application started).
 
 **Note:** Both jobs now recover on their own — invoice-weekly next Mon 09:00, homelab-health-daily next 08:00. No manual re-run needed.
+
+## 2026-07-21 — CI broken (red on every run) → fixed
+
+**Symptom:** GitHub Actions "CI" job failing on ALL runs (incl. the #24 merge to main). `pytest` collection aborted with `ModuleNotFoundError: No module named 'httplib2'` from `tests/test_invoice_pilot.py`.
+
+**Root cause:** `tests/test_invoice_pilot.py` imports `httplib2` + `googleapiclient.errors.HttpError` to build fake Gmail `Response`/`HttpError` objects. Neither is in `requirements.txt` (only `httpx`). CI installs from `requirements.txt` only → import fails → pytest collection error → whole suite red. Passed locally because the dev `.venv` had `httplib2` transitively installed. `invoice_pilot.py` itself is pure stdlib — the missing deps are **test-only**.
+
+**Fix:** added `httplib2>=0.22` + `google-api-python-client>=2.0` to `requirements.txt`. Verified in a clean venv (CI-equivalent): `ruff check .` clean, `pytest tests/` = 159 passed (collection no longer errors).
+
+**Deployed:** committed to `main` (bea413b) → pushed → CI green (Ruff + 159 passed). Fast-forwarded `dev` to `main` so both branches synced at `bea413b`.
+
+**Lesson:** any test-only import must be in `requirements.txt` (project keeps one requirements file, pytest already listed there). When adding a test that fakes an SDK, add that SDK to requirements or the CI collection breaks for everyone.
