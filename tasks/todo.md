@@ -358,26 +358,96 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - `context_builder.py` — `_load_brain()`, `ContextConfig`, priority trim
 - `agent_runtime.py:352` — `build_system_prompt()` call site
 
-## Phase 10: Interactive TUI agent session (PLANNED — not started)
+## Phase 10: Interactive TUI agent session ✅ DONE
 
 **Goal:** An interactive terminal UI for aureon-agent (like `claude-code`, `hermes`, `openclaw`) — run in a terminal, chat with the agent live. Inside it: all `/commands` (sessions, doctor, status, cron, mcp, skills, logs, version, help, new) and it **boots as a new session or `/handoff`s an existing Telegram session** (loads that chat's history so the terminal continues the conversation).
 
 **Why:** Captain wants a first-class terminal surface, not just Telegram. The runtime core (`agent_runtime.run`) is already channel-agnostic — Telegram drives it via `router.handle_message`; a TUI drives it directly with a local loop. Reuses `SessionManager`, `SkillLoader`, `ToolRegistry`, existing CLI handlers.
 
-**Kickoff:** `tasks/kickoff-tui-session.md` (written 2026-07-19)
+**Kickoff:** `tasks/kickoff-tui-session.md` (written 2026-07-19, removed after ship)
 
 **Design (from kickoff):**
-- `aureon_agent/tui.py` — async REPL using `prompt_toolkit` (`PromptSession`, `enable_history_search`, `await psession.prompt_async()`) with `input()` fallback.
+- `aureon_agent/repl.py` — async REPL using `prompt_toolkit` (`PromptSession`, `enable_history_search`, `await psession.prompt_async()`) with `input()` fallback.
 - Boot modes: default → new `tui:tty` session; `--handoff telegram:723865496` → load that session's history; `--session <id>` → resume a `tui:` session.
 - `/commands` routed same as Telegram (shell out to CLI handlers; `new`/`help` local).
 - `/handoff <id>` live-switches mid-session.
 - Confirmation in TUI = typed yes/no (watches `pending_confirmations`; no Telegram keyboard).
 
 **Pre-reqs / open questions:**
-- Extract `build_runtime()` from `cli.py` if `start()` tightly couples bot boot (TUI + bot share it).
-- `prompt_toolkit` added to `requirements.txt` (pure-python, no native build).
+- Extract `build_runtime()` from `cli.py` if `start()` tightly couples bot boot (TUI + bot share it). ✅ done in PR #23
+- `prompt_toolkit` added to `requirements.txt` (pure-python, no native build). ✅
 
-**Status:** ✅ DONE (TUI built, Rich chrome /help and banner shipped).
+**Status:** ✅ DONE (TUI built, Rich chrome /help and banner shipped, merged to dev+main in #24).
+
+## Phase 11: Web UI dashboard (aureon-webui) — PLANNED, not started
+
+**Goal:** Give aureon-agent a browser control UI like OpenClaw (`openclaw-dashboard`) and Hermes (`hermes-webui` / `hermes-dashboard`) — dashboard widgets (status, sessions, skills, cron, tools) + a live chat surface, served from athena and reached over Tailscale (no `0.0.0.0` binds).
+
+**Why now:** Captain noted aureon has no webui unlike Hermes/OpenClaw. Research (2026-07-21) into the local dashboard repos shows BOTH ship a **gateway daemon** that owns an HTTP/WS port and exposes session/status/tool state, with a **thin React/Vite client** on top. aureon currently has **NO web backend at all** (`grep` for `FastAPI|uvicorn|websocket|aiohttp|Flask|quart|starlette|http.server` → zero hits). It only speaks Telegram (`channels/telegram.py`) + terminal TUI (`repl.py`). So the real blocker is the **missing transport layer**, not the UI.
+
+### Reference architectures found (local)
+- **OpenClaw `dev-shared/projects/openclaw-dashboard`** (CLAUDE.md):
+  - React + TypeScript + Vite, React Router v6, Zustand, NeoPOP/Neumorphism design system (`src/theme/tokens.ts`, `theme.json`, `theme.css`; themes `hybrid-dark`/`hybrid-light`).
+  - **WebSocket RPC** to gateway at `ws://127.0.0.1:18789` (`src/hooks/useGateway.ts`) — connection + auth + Ed25519 device identity in `localStorage` + RPC calls.
+  - Routes: `/dashboard` (widgets: channels, instances, sessions, metrics), `/chat` (slash cmds `/network`, `/agent`), command palette.
+  - Build: `pnpm ui:build` → `dist/control-ui`; Vitest unit + Playwright e2e.
+  - The UI is a **thin client**; the `openclaw-gateway` daemon (long-running, owns WS port + agent runtime) is the brain.
+- **Hermes `homelab/hermes-webui` + `hermes-dashboard`** (docker-compose.yml):
+  - `hermes-webui` = community image `ghcr.io/nesquena/hermes-webui` + **Tailscale sidecar** (`ts-agent`), `network_mode: service:ts-agent`, mounts `~/.hermes`.
+  - `hermes-dashboard` = official, same Tailscale-sidecar pattern.
+  - Backend = `hermes-gateway` (port 8642 API, 8644 webhook).
+  - Both ship via the homelab **Tailscale-sidecar convention**: `ts-<svc>` container + main container `network_mode: service:ts-<svc>`, no `0.0.0.0`.
+
+### The gap (what aureon lacks)
+- No HTTP/WS server process. State lives in `data/sessions.db` + in-process only.
+- `__main__.py` subcommands: setup/start/stop/status/logs/doctor/cron/mcp/sessions/skills/tui — **no `server`**.
+- **But the data layer is already UI-ready**: `gather_status()`/`render_status` (rich /status), `SessionManager.list_sessions()` (with `status` column active/idle/stale), `SkillLoader.get_active_skills()`, cron `list_sessions`/`list_jobs`, `ToolRegistry` (57 tools). All return clean dicts a UI can render.
+
+### Design (mirror OpenClaw/Hermes, keep aureon light)
+
+**Part A — `aureon-gateway` (backend, localhost-only):**
+- Add a web server to aureon. Recommend **FastAPI** (async, matches the aureon async runtime; `uvicorn` worker). Bind **`127.0.0.1:<port>`** only (per Captain's no-`0.0.0.0` rule).
+- Expose REST:
+  - `GET /status` → reuse `gather_status()` (service/runtime/tokens/session/cron/mcp sections).
+  - `GET /sessions` → `SessionManager.list_sessions()` (returns `status` column).
+  - `GET /skills` → `SkillLoader.get_active_skills()`.
+  - `GET /cron` → cron job list + next runs.
+  - `GET /tools` → `ToolRegistry` summary (skill/inline/mcp counts + names).
+- Expose **WebSocket `/ws`** for live chat (mirror OpenClaw's WS RPC):
+  - Client sends `{type:"message", session_id, text}` → server calls `agent.run(...)` with an `on_token` callback that streams tokens back over WS.
+  - Reuse the SAME `build_runtime()` + `agent.run` the bot/TUI use. Channel id e.g. `web:<conn_id>`.
+  - Optional Ed25519 device identity in `localStorage` (copy OpenClaw) — or a simpler `web:` session token for v1.
+- `SessionManager` already SQLite-backed and channel-agnostic (`web:xxx` joins `telegram:`, `tui:`). Reuse it — a web chat is just another channel.
+- New subcommand: `aureon-agent server` (or `start --web`) boots `uvicorn` alongside the Telegram bot (bot keeps running; server is additive). systemd unit stays as the bot; the web server is a second process or a thread in the same runtime.
+- Add `fastapi`, `uvicorn`, `websockets` to `requirements.txt` (+ CI must install them; see 2026-07-21 CI fix lesson — test-only imports MUST be in requirements).
+
+**Part B — `aureon-webui` (frontend, mirror openclaw-dashboard):**
+- New repo/project `dev-shared/projects/aureon-webui`: React + TypeScript + Vite (same stack as openclaw-dashboard).
+- WS RPC client hook `src/hooks/useGateway.ts` → `ws://127.0.0.1:<port>/ws` (localhost; over Tailscale the browser hits the Tailscale IP/hostname).
+- Routes: `/dashboard` (widgets: status summary, session list w/ status colors, skills, cron, tool count), `/chat` (live chat streaming from WS).
+- Design: light, aureon-flavored (NOT copy NeoPOP verbatim — Captain rejected literal substitution before; pick a clean dark theme + aureon accent). Keep it lighter than OpenClaw's heavy NeoPOP.
+- Build: `pnpm build` → `dist/`; serve statically OR let the gateway serve `dist/` (single process). For v1, gateway serves the built `dist/` at `/` (FastAPI `StaticFiles`) → one port, simplest.
+- Tests: Vitest unit + Playwright e2e (match openclaw-dashboard's `ui:test`/`ui:e2e`).
+
+**Part C — Ship (mirror hermes-webui Tailscale-sidecar):**
+- `homelab/aureon-webui/docker-compose.yml`: `ts-aureon` sidecar (Tailscale) + `aureon-webui` container `network_mode: service:ts-aureon`, mounts the aureon repo + `data/`. NO `0.0.0.0` binds.
+- Gateway binds `127.0.0.1:<port>`; the Tailscale sidecar fronts it (like `hermes-dashboard` via `TS_SERVE_CONFIG`).
+- Alternative (simpler, no Docker): run the gateway as a second systemd unit on athena, reach it via Tailscale MagicDNS (`auxois-wyrm.ts.net:<port>`). Pick ONE path — keep it agent-native + single runtime (Captain prefers one coherent runtime over duplicate solutions).
+
+### Open questions / decisions needed
+- **Port:** pick a free localhost port (avoid 8642/8644/9119/11434/9090). e.g. `18789`-style or `8800`.
+- **Single gateway process vs separate:** recommend the gateway server runs INSIDE the aureon runtime (same process as bot) so `web:` sessions share the live `SessionManager` + tool state. Avoids a second source of truth.
+- **Auth:** v1 = localhost-only + Tailscale ACL (like Hermes). Ed25519 device identity optional later (copy OpenClaw).
+- **Scope cut:** v1 = dashboard widgets + live chat over WS. Defer: command palette, multi-theme, mobile.
+
+### Verification
+- `curl localhost:<port>/status` returns the rich status JSON.
+- Browser at Tailscale URL shows dashboard + live chat streams tokens.
+- `web:<id>` session appears in `aureon-agent sessions` (shared `SessionManager`).
+- CI: `requirements.txt` has fastapi/uvicorn/websockets; `pytest` still green; add a `test_gateway.py` (start server in-process, hit `/status`, assert JSON).
+- No `0.0.0.0` binds; reaches only via Tailscale.
+
+**Status:** ⏳ PLANNED — not started. Will be built after current session work. Kickoff to be written when dispatched.
 
 ## 2026-07-18/19 carry-over fixes (DONE, verify DEVLOG)
 
