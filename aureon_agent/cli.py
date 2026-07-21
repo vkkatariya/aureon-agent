@@ -129,6 +129,83 @@ async def _start_health_server():
     return runner
 
 
+async def build_runtime(*, watch_skills=True, connect_mcp=True):
+    """Wire the shared agent runtime (memory, sessions, skills, MCP, registry).
+
+    Reused by the bot (`main`) and the interactive TUI (`repl`) so both drive the
+    exact same `agent.run`. Does not touch channels, cron, PID lock, or signals.
+    Returns a dict of the built components.
+
+    `connect_mcp=False` skips spawning the MCP stdio servers — the TUI uses this
+    for a fast boot + clean exit (the anyio stdio teardown can block); it still
+    gets the doctrine skills, just not the MCP-backed tools.
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    memory = Memory(os.path.join(DATA_DIR, "memory.db"))
+    await memory.connect()
+
+    sessions = SessionManager(os.path.join(DATA_DIR, "sessions.db"))
+    await sessions.connect()
+
+    skills = SkillLoader(os.path.join(WORKSPACE_DIR, "skills"))
+    await skills.load()
+    reload_task = asyncio.create_task(skills.watch()) if watch_skills else None
+
+    thinking_env = os.getenv("AUREON_THINKING", "false").lower() == "true"
+    try:
+        thinking_budget = int(os.getenv("AUREON_THINKING_BUDGET", "1024"))
+    except ValueError:
+        thinking_budget = 1024
+
+    # Only enable the cloud fallback when BOTH a URL and a key are present.
+    # An unauthenticated cloud fallback (key empty) yields 401 on every blip
+    # of the local endpoint — better to fail loud than fail to a dead fallback.
+    _cloud_url = os.getenv("OLLAMA_CLOUD_BASE_URL")
+    _cloud_key = os.getenv("OLLAMA_API_KEY")
+    _fallback_base = _cloud_url if (_cloud_url and _cloud_key) else None
+
+    agent = AgentRuntime(
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
+        api_key=os.getenv("OLLAMA_API_KEY"),
+        model=os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud"),
+        skill_loader=skills,
+        workspace_dir=WORKSPACE_DIR,
+        memory=memory,
+        fallback_base_url=_fallback_base,
+        fallback_api_key=_cloud_key,
+        thinking=thinking_env,
+        thinking_budget=thinking_budget,
+    )
+
+    # ── MCP servers ───────────────────────────────────────────────
+    from aureon_agent.mcp_client import MCPManager
+    from aureon_agent.tool_registry import ToolRegistry
+
+    mcp_manager = MCPManager()
+
+    # Connect configured MCP servers (fail soft — log warning, continue without)
+    if connect_mcp:
+        for server_cfg in _parse_mcp_servers():
+            ok = await mcp_manager.add_server(**server_cfg)
+            if ok:
+                logger.info("MCP server '%s' connected (%d tools)",
+                            server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
+
+    # ── Tool registry ─────────────────────────────────────────────
+    registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)
+    agent.setup_registry(registry)
+    logger.info("tool registry: %d tools (%s)",
+                registry.tool_count,
+                ", ".join(f"{k}: {len(v)}" for k, v in registry.list_tools_by_backend().items() if v))
+
+    return {
+        "memory": memory, "sessions": sessions, "skills": skills,
+        "agent": agent, "mcp_manager": mcp_manager, "registry": registry,
+        "reload_task": reload_task,
+    }
+
+
 async def main():
     # PID lock — prevent two instances on the same workspace.
     existing = acquire_lock()
@@ -141,49 +218,13 @@ async def main():
         sys.exit(1)
 
     logger.info("aureon-agent starting up")
-    os.makedirs(DATA_DIR, exist_ok=True)
 
-    memory = Memory(os.path.join(DATA_DIR, "memory.db"))
-    await memory.connect()
-
-    sessions = SessionManager(os.path.join(DATA_DIR, "sessions.db"))
-    await sessions.connect()
-
-    skills = SkillLoader(os.path.join(WORKSPACE_DIR, "skills"))
-    await skills.load()
-    reload_task = asyncio.create_task(skills.watch())
-
-    agent = AgentRuntime(
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-        api_key=os.getenv("OLLAMA_API_KEY"),
-        model=os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud"),
-        skill_loader=skills,
-        workspace_dir=WORKSPACE_DIR,
-        memory=memory,
-        fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1"),
-        fallback_api_key=os.getenv("OLLAMA_API_KEY"),
-    )
-
-    # ── MCP servers ───────────────────────────────────────────────
-    from aureon_agent.mcp_client import MCPManager
-    from aureon_agent.tool_registry import ToolRegistry
-
-    mcp_manager = MCPManager()
-
-    # Connect configured MCP servers (fail soft — log warning, continue without)
-    mcp_servers = _parse_mcp_servers()
-    for server_cfg in mcp_servers:
-        ok = await mcp_manager.add_server(**server_cfg)
-        if ok:
-            logger.info("MCP server '%s' connected (%d tools)",
-                        server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
-
-    # ── Tool registry ─────────────────────────────────────────────
-    registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)
-    agent.setup_registry(registry)
-    logger.info("tool registry: %d tools (%s)",
-                registry.tool_count,
-                ", ".join(f"{k}: {len(v)}" for k, v in registry.list_tools_by_backend().items() if v))
+    rt = await build_runtime()
+    memory = rt["memory"]
+    sessions = rt["sessions"]
+    agent = rt["agent"]
+    mcp_manager = rt["mcp_manager"]
+    reload_task = rt["reload_task"]
 
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
 

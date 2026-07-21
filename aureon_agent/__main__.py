@@ -1,6 +1,7 @@
 import argparse
 import sys
 import subprocess
+import os
 
 from aureon_agent import __version__
 from aureon_agent.cli import main as run_start
@@ -64,11 +65,8 @@ def cmd_stop(args):
     subprocess.run(["systemctl", "--user", "stop", "aureon-agent.service"], check=False)
 
 def cmd_status(args):
-    try:
-        out = subprocess.check_output(["systemctl", "--user", "status", "aureon-agent.service", "--no-pager"], text=True)
-        print(out)
-    except subprocess.CalledProcessError as e:
-        print(e.output)
+    from aureon_agent.status import cmd_status as _rich_status
+    _rich_status(args)
 
 def cmd_logs(args):
     subprocess.run(["journalctl", "--user", "-u", "aureon-agent.service", "-f"])
@@ -176,6 +174,101 @@ def cmd_subagent_log(args):
 def cmd_version(args):
     print(f"aureon-agent v{__version__}")
 
+
+def cmd_sessions(args):
+    """List all chat sessions from sessions.db (channel:client_id, msg count, last active)."""
+    import asyncio
+    import time as _time
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from session_manager import SessionManager
+
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(BASE_DIR, "data", "sessions.db")
+
+    async def _run():
+        sm = SessionManager(db_path)
+        await sm.connect()
+        try:
+            return await sm.list_sessions()
+        finally:
+            await sm.close()
+
+    sessions = asyncio.run(_run())
+    console = Console()
+
+    if not sessions:
+        console.print("[yellow]No sessions found.[/yellow]")
+        return
+
+    table = Table(title="Chat Sessions")
+    table.add_column("Session ID", style="cyan")
+    table.add_column("Channel")
+    table.add_column("Client")
+    table.add_column("Msgs", justify="right")
+    table.add_column("Status")
+    table.add_column("Last active")
+
+    _status_style = {"active": "green", "idle": "yellow", "stale": "dim"}
+    for s in sessions:
+        updated = s.get("updated_at")
+        last = _time.strftime("%Y-%m-%d %H:%M", _time.localtime(updated)) if updated else "—"
+        status = s.get("status", "stale")
+        table.add_row(
+            s["session_id"],
+            s.get("channel") or "—",
+            s.get("client_id") or "—",
+            str(s.get("msg_count", 0)),
+            f"[{_status_style.get(status, 'dim')}]{status}[/{_status_style.get(status, 'dim')}]",
+            last,
+        )
+    console.print(table)
+
+def cmd_skills_list(args):
+    """List loaded doctrine skills (name + description + path) as a Rich table.
+
+    Reads from the same workspace/skills dir cli.py loads at boot, so output
+    matches the running bot's active skills."""
+    import asyncio
+    import logging
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from skill_loader import SkillLoader
+
+    logging.getLogger("skill_loader").setLevel(logging.WARNING)  # quiet per-skill INFO
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    skills_dir = os.path.join(BASE_DIR, "workspace", "skills")
+
+    async def _load():
+        loader = SkillLoader(skills_dir)
+        await loader.load()
+        return loader.get_active_skills()
+
+    skills = asyncio.run(_load())
+    console = Console()
+
+    if not skills:
+        console.print("[yellow]No skills loaded.[/yellow]")
+        return
+
+    table = Table(title=f"Doctrine Skills ({len(skills)})")
+    table.add_column("Skill", style="cyan")
+    table.add_column("Description", overflow="fold")
+    table.add_column("Path", style="dim", overflow="fold")
+
+    home = os.path.expanduser("~")
+    for s in skills:
+        path = s.get("path", "") or "—"
+        if path.startswith(home):
+            path = "~" + path[len(home):]
+        table.add_row(s["name"], s.get("description") or "—", path)
+    console.print(table)
+
+
 def main():
     parser = argparse.ArgumentParser(description="aureon-agent CLI")
     subparsers = parser.add_subparsers(dest="command")
@@ -226,6 +319,19 @@ def main():
     # version
     subparsers.add_parser("version", help="Print version")
     
+    # sessions
+    subparsers.add_parser("sessions", help="List all chat sessions")
+
+    # skills
+    p_skills = subparsers.add_parser("skills", help="Doctrine skill management")
+    skills_sub = p_skills.add_subparsers(dest="skills_command")
+    skills_sub.add_parser("list", help="List loaded doctrine skills")
+
+    # tui (interactive terminal session)
+    p_tui = subparsers.add_parser("tui", help="Interactive terminal agent session")
+    p_tui.add_argument("--handoff", help="Continue an existing session (e.g. telegram:723865496)")
+    p_tui.add_argument("--session", help="Resume a specific tui session id")
+
     # If no args provided, default to 'start'
     if len(sys.argv) == 1:
         sys.argv.append("start")
@@ -268,6 +374,16 @@ def main():
             print("Usage: aureon-agent mcp list")
     elif args.command == "version":
         cmd_version(args)
+    elif args.command == "sessions":
+        cmd_sessions(args)
+    elif args.command == "skills":
+        if getattr(args, "skills_command", None) == "list":
+            cmd_skills_list(args)
+        else:
+            print("Usage: aureon-agent skills list")
+    elif args.command == "tui":
+        from aureon_agent.repl import cmd_tui
+        sys.exit(cmd_tui(args))
 
 if __name__ == "__main__":
     main()

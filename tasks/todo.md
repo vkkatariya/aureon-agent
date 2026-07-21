@@ -42,7 +42,7 @@
 - [x] PID lock at startup (PR #9 — `aureon_agent/pidlock.py`, prevents the Telegram 409 trap when two instances run on the same token)
 - [x] Plan-node hard block (v2)
 - [x] Subagent dispatch via the delegate_task pattern
-- [x] Session compaction for long histories (PR pending, branch `feat/aureon-agent-session-compaction`)
+- [x] Session compaction for long histories (PR #13 merged, live-verified — auto-compaction fires on 32K model, skipped on 1M)
   - [x] Sub-task 1: Token counting + model-aware threshold — `aureon_agent/models.py` (`MODEL_CONTEXT_WINDOWS`, unknown-model fallback 32K + WARN), `compaction/counter.py` (tiktoken `cl100k_base`, `len//4` fallback), `compaction/threshold.py` (`compute_compact_threshold`, `compute_recent_verbatim_size`, safety skip if system prompt >50% of context window)
   - [x] Sub-task 2: Summarization + audit log — `compaction/summarizer.py` (LLM-call summarizer, 300 max output tokens, 30s timeout, degraded-fallback-on-failure), `compaction/log.py` (`CompactionLog` append-only SQLite audit trail in `data/compaction_log.db`, never touches `sessions.db`)
   - [x] Sub-task 3: View-layer integration — `agent_runtime.py` `_maybe_compact()`/`_compact()` wired into `run()`, gated by `AUREON_COMPACTION_ENABLED` (default off), sliding-window + LLM-summary strategy, fail-open on any error
@@ -53,15 +53,16 @@
 - [ ] Webhook mode for Telegram (replace polling)
 - [ ] Server/group channel support
 
-## Invoice auto-downloader (interview task, branch `feat/invoice-pilot`) ✅ (PR pending)
+## Invoice auto-downloader (interview task) ✅
 
-Prototype: search Gmail → recognize invoices → download attachments → save to a folder. Two engines on one OAuth base + weekly scheduler. Full spec: `tasks/kickoff-invoice-pilot.md`.
+Prototype: search Gmail → recognize invoices → download attachments → save to a folder. Two engines on one OAuth base + weekly scheduler. Full spec: `tasks/kickoff-invoice-pilot.md` (deleted post-merge).
 
-- [x] Engine A — `invoice_pilot.py` standalone workflow: OAuth refresh-token, search-first query, throttled batches (50/6s) + 429 backoff + `.seen.json` checkpoint, `--dry-run/--before/--after/--incremental/--strict`. `requirements-invoice.txt`. 19 tests.
+- [x] Engine A — `invoice_pilot.py` standalone workflow: OAuth refresh-token, search-first query, throttled batches (50/6s) + 429 backoff + `.seen.json` checkpoint, `--dry-run/--before/--after/--incremental/--strict`. `requirements-invoice.txt`. 20 tests (renumbered).
 - [x] Engine B — MCP patch: `attachmentId` surfaced + `downloadAttachment()` + `api()` 429 backoff in `multi-email-mcp`; `download_attachment` tool registered. Captured in `mcp-patches/` (patches + `apply.sh` + README). Node smoke `tests/mcp_gmail_download.test.mjs` + `live_test_gmail_download.py`.
-- [x] Engine C — **both variants** (Captain's call): (1) `systemd/aureon-invoice.{service,timer}` (Mon 09:00, `--incremental`, deterministic + dedup); (2) aureon agent-scheduler cron job `invoice-weekly` (`0 9 * * 1`) driving the Engine B MCP tools per agent turn — seed `scripts/seed-invoice-cron.sh`.
-- [x] Live-verified (L-081): Engine A 2 real `%PDF` + idempotent re-run; Engine B real `%PDF` via MCP (byte-identical); C-systemd window flip 90d→7d; C-agent ran the job prompt through a real agent turn → chained search→read→download → saved a real `%PDF`. `pytest` 97 pass, ruff clean.
-- [ ] **Captain action:** restart the bot to load the patched `download_attachment` into its running MCP subprocess (else the Mon 09:00 job + live Telegram requests 404 the tool).
+- [x] Engine C — **agent-native cron only**: aureon cron job `invoice-weekly` (`0 9 * * 1`, Europe/Berlin) driving the Engine B MCP tools per agent turn (search→read→download), Telegram summary. Seed `scripts/seed-invoice-cron.sh`. The standalone **systemd-timer variant was dropped** (bypassed the agent, duplicated work outside the runtime) — see `tasks/aureon-agent invoice autodownloader.md`.
+- [x] Live-verified (L-081): Engine A real `%PDF`s downloaded (84 invoices, 2021→2026, dedup-safe, no 429); Engine B real `%PDF` via MCP; `invoice-weekly` ran via real agent turn → saved a real `%PDF` + Telegram summary. `pytest` 97 pass, ruff clean.
+- [x] **Bot restarted, patched `download_attachment` live in running MCP subprocess** (verified: `invoice-weekly` job succeeded end-to-end).
+- [x] Shipped: merged to dev + main, tagged **v0.5.1**.
 
 ## Phase 9: Cron Scheduler ✅
 
@@ -309,7 +310,7 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - [x] `aureon-agent setup --quick` only prompts for unset fields
 - [x] `aureon-agent setup --reset` confirms destructive action, uses `trash` not `rm`
 - [x] `aureon-agent doctor` exits 0 on healthy live system
-- [ ] systemd service live, survives `systemctl --user restart`, `aureon-agent logs` shows Telegram polling (deferred — not in v1)
+- [x] systemd service live, survives `systemdctl --user restart`, `aureon-agent logs` shows Telegram polling (verified live this session)
 - [x] Existing Telegram round-trip still works after the refactor
 - [x] All new/modified tests pass: `tests/test_config.py`, `tests/test_setup.py`, `tests/test_doctor.py`, `tests/smoke.py`, `tests/test_agent_loop.py`
 - [x] README updated, `docs/setup-script.md` matches wizard.md structure
@@ -322,15 +323,6 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 **References:**
 - OpenClaw docs: `~/.npm-global/lib/node_modules/openclaw/docs/start/{wizard,wizard-cli-reference,wizard-cli-automation,setup}.md`
 - OpenClaw health check: `~/.openclaw/workspace/scripts/openclaw-health.sh`
-- [ ] Sub-task 4: TUI helpers
-- [ ] Sub-task 5: Step 1 — Existing config detection
-- [ ] Sub-task 6: Step 2 — Model + LLM provider
-- [ ] Sub-task 7: Step 3 — Telegram channel
-- [ ] Sub-task 8: Step 4 — Discord channel + health + daemon + skills
-- [ ] Sub-task 9: Doctor command
-- [ ] Sub-task 10: Postinstall command
-- [ ] Sub-task 11: Top-level CLI glue
-- [ ] Sub-task 12: README + docs
 
 ## Phase 8: Layered Context Builder (Option B) ✅
 
@@ -365,3 +357,28 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - Kickoff: `tasks/kickoff-phase8-context.md`
 - `context_builder.py` — `_load_brain()`, `ContextConfig`, priority trim
 - `agent_runtime.py:352` — `build_system_prompt()` call site
+
+## Phase 10: Interactive TUI agent session (PLANNED — not started)
+
+**Goal:** An interactive terminal UI for aureon-agent (like `claude-code`, `hermes`, `openclaw`) — run in a terminal, chat with the agent live. Inside it: all `/commands` (sessions, doctor, status, cron, mcp, skills, logs, version, help, new) and it **boots as a new session or `/handoff`s an existing Telegram session** (loads that chat's history so the terminal continues the conversation).
+
+**Why:** Captain wants a first-class terminal surface, not just Telegram. The runtime core (`agent_runtime.run`) is already channel-agnostic — Telegram drives it via `router.handle_message`; a TUI drives it directly with a local loop. Reuses `SessionManager`, `SkillLoader`, `ToolRegistry`, existing CLI handlers.
+
+**Kickoff:** `tasks/kickoff-tui-session.md` (written 2026-07-19)
+
+**Design (from kickoff):**
+- `aureon_agent/tui.py` — async REPL using `prompt_toolkit` (`PromptSession`, `enable_history_search`, `await psession.prompt_async()`) with `input()` fallback.
+- Boot modes: default → new `tui:tty` session; `--handoff telegram:723865496` → load that session's history; `--session <id>` → resume a `tui:` session.
+- `/commands` routed same as Telegram (shell out to CLI handlers; `new`/`help` local).
+- `/handoff <id>` live-switches mid-session.
+- Confirmation in TUI = typed yes/no (watches `pending_confirmations`; no Telegram keyboard).
+
+**Pre-reqs / open questions:**
+- Extract `build_runtime()` from `cli.py` if `start()` tightly couples bot boot (TUI + bot share it).
+- `prompt_toolkit` added to `requirements.txt` (pure-python, no native build).
+
+**Status:** ✅ DONE (TUI built, Rich chrome /help and banner shipped).
+
+## 2026-07-18/19 carry-over fixes (DONE, verify DEVLOG)
+
+- Doctor TUI gmail fix (read `GOOGLE_OAUTH_*`), cron name-resolution (`_resolve_job`), rich `/status` (PR #21), `/new` + `/skills` + `skills list` (PR #22), inline-keyboard confirmation (replaces typed-yes loop). See DEVLOG entries below.

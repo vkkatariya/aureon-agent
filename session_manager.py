@@ -71,6 +71,22 @@ class SessionManager:
             )
             await self._db.commit()
 
+    async def clear_session(self, session_id):
+        """Delete all messages for a session (start fresh), keeping the session
+        row with a reset updated_at. Returns the number of messages cleared —
+        0 if the session was already empty or doesn't exist."""
+        async with self._lock_for(session_id):
+            cursor = await self._db.execute(
+                "DELETE FROM messages WHERE session_id = ?", (session_id,)
+            )
+            cleared = cursor.rowcount or 0
+            await self._db.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                (time.time(), session_id),
+            )
+            await self._db.commit()
+            return cleared
+
     async def get_history(self, session_id):
         cursor = await self._db.execute(
             "SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY idx",
@@ -84,3 +100,42 @@ class SessionManager:
                 entry["tool_calls"] = json.loads(tool_calls)
             history.append(entry)
         return history
+
+    async def list_sessions(self) -> list[dict]:
+        """List all sessions with message counts + last activity.
+
+        Returns rows ordered by most-recently-updated first. Each dict:
+        {session_id, channel, client_id, msg_count, created_at, updated_at, status}
+        where `status` is derived from `updated_at`:
+          active  -> updated < 24h ago
+          idle    -> updated 1-7 days ago
+          stale   -> updated > 7 days ago (or never)
+        """
+        cursor = await self._db.execute(
+            "SELECT s.session_id, s.channel, s.client_id, s.created_at, s.updated_at, "
+            "COUNT(m.idx) AS msg_count "
+            "FROM sessions s LEFT JOIN messages m ON s.session_id = m.session_id "
+            "GROUP BY s.session_id ORDER BY s.updated_at DESC"
+        )
+        now = time.time()
+        rows = await cursor.fetchall()
+        out = []
+        for r in rows:
+            updated = r[4] or 0.0
+            age = now - updated
+            if age < 86400:
+                status = "active"
+            elif age < 7 * 86400:
+                status = "idle"
+            else:
+                status = "stale"
+            out.append({
+                "session_id": r[0],
+                "channel": r[1],
+                "client_id": r[2],
+                "created_at": r[3],
+                "updated_at": r[4],
+                "msg_count": r[5],
+                "status": status,
+            })
+        return out

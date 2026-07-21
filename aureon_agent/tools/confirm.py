@@ -15,31 +15,27 @@ async def confirm_with_captain(context: dict, prompt_text: str, timeout: int = 6
     if not router or not session_id:
         logger.warning("confirm_with_captain called without router/session_id in context. Denying.")
         return False
-        
-    # We will register a pending clarification with the router
-    # For now, we mock the logic since clarify tool is Tier 2, but the prompt says Tier 1 needs confirmation.
-    # Wait, the prompt says "confirm_with_captain() helper for destructive/expensive ops (60s timeout, default = deny)."
-    # Let's use the router's send_message and wait for reply.
-    # The router might not have a wait_for_reply mechanism yet. We need to implement it in the router.
-    
+
     try:
-        # Ask question
-        full_prompt = f"⚠️ **Confirmation Required**\n{prompt_text}\n\nReply 'yes' to proceed, or anything else to deny."
-        await router.send_message(session_id, full_prompt)
-        
-        # Wait for reply via a future registered in router
+        # Ask via inline keyboard (Yes/No buttons) — not a typed "yes" prompt,
+        # which loops on headless boxes. Falls back to typed yes via the
+        # pending_confirmations future resolved in router.handle_message.
+        full_prompt = f"⚠️ **Confirmation Required**\n{prompt_text}\n\nTap ✅ Yes to proceed, or ❌ No to deny."
+        confirm_data = "confirm_yes"
+        cancel_data = "confirm_no"
+
+        # Register the future BEFORE sending, so a fast tap isn't lost.
         future = asyncio.Future()
-        
-        # We need the router to have a pending_confirmations dict: session_id -> future
         if not hasattr(router, "pending_confirmations"):
             router.pending_confirmations = {}
-            
         router.pending_confirmations[session_id] = future
-        
+
+        await router.send_confirmation(session_id, full_prompt, confirm_data, cancel_data)
+
         # Wait with timeout
         reply = await asyncio.wait_for(future, timeout=timeout)
-        
-        # Check answer
+
+        # Check answer (covers both inline-tap "yes"/"no" and typed fallback).
         is_confirmed = reply.strip().lower() in ["yes", "y", "confirm", "proceed", "approve"]
         return is_confirmed
         

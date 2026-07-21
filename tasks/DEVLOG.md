@@ -2,6 +2,64 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-07-20 — TUI polished chrome (lighter Claude/Hermes style)
+**Did:** Upgraded the interactive TUI (`aureon_agent/repl.py`) with a polished Rich banner and `/help` menu, matching Claude Code / Hermes aesthetics but lighter (no new dependencies, Rich-only, no pixel art).
+
+**Built:**
+- **Rich banner (`_print_banner`):** Replaced plain `print()` with a `rich.panel.Panel` and `rich.table.Table`. Shows `model`, `profile` (`USER_PROFILE` env with "Captain (Nous)" fallback), `cwd`, and `session`. Added a feature announcement line ("interactive session · MCP tools offline").
+- **Polished `/help` (`_print_help`):** Replaced the static multi-line `HELP` string with a `rich.table.Table` mapping commands to descriptions. Added a dynamic capabilities footer ("24 tools · 8 doctrine skills · ...") powered by the agent's runtime registry and skills.
+- **Tests (`tests/test_tui.py`):** Extended `FakeAgent` with `.model` and added mock skills/registry properties. `test_default_creates_tui_session` now captures standard output using `capsys` and asserts the presence of the banner's key strings (`aureon-agent`, `session`, `tui:tty`).
+
+**Verified:**
+- `pytest tests/test_tui.py` passed (16 tests).
+- `pytest tests/` passed (148 tests).
+- `ruff check` on modified files is clean.
+- Manual visual test (`python -m aureon_agent.__main__ tui` via script) rendered a beautiful Rich panel that naturally truncated the subtitle to fit the terminal width, displaying the exact information parity requested.
+
+**Modified:** `aureon_agent/repl.py`, `tests/test_tui.py`.
+
+## 2026-07-19 — Interactive TUI agent session (local session, branch `feat/tui-session`)
+**Did:** Added a Claude-Code/Hermes-style interactive terminal session — `python -m aureon_agent.__main__ tui` — that chats with the agent live and boots either fresh or by `--handoff`-ing an existing (e.g. Telegram) session.
+**Built:**
+- `aureon_agent/cli.py`: extracted `build_runtime(watch_skills=, connect_mcp=)` from `main()` — the shared memory/sessions/skills/agent/MCP/registry wiring, so the TUI drives the exact same `agent.run` as the bot. `main()` now calls it.
+- `aureon_agent/repl.py` (new): `run_tui(handoff, session)` + `cmd_tui`. Boot modes — default `tui:tty`, `--handoff telegram:723865496` (validated against `list_sessions`, loads that history), `--session <id>`. `prompt_toolkit` input line (history + keybindings) with `input()` fallback on non-TTY/import-fail; tokens stream to stdout. `/commands` reuse the CLI subcommands; `/new` (typed yes/no confirm) → `clear_session`; `/handoff` switches the live session (re-registers a `TuiChannel` under the target's channel prefix); `/help`+`/exit` local. Destructive confirmations (`confirm_with_captain`) resolve via a stdin watcher on `router.pending_confirmations` (no Telegram keyboard in a terminal).
+- `aureon_agent/__main__.py`: `tui` subparser (`--handoff`/`--session`) + dispatch. `requirements.txt`: `prompt_toolkit>=3.0`.
+**Decisions / gotchas:**
+- **Named the module `repl.py`, not `tui.py`** — `aureon_agent/tui.py` already exists (the setup-wizard Rich/Questionary helpers); clobbering it would break `setup`.
+- **TUI skips MCP (`connect_mcp=False`).** The MCP stdio teardown (anyio) can raise `CancelledError`/block on exit, and `wait_for` can't reliably cancel it — a hanging TUI is worse than one without the MCP-backed tools. The TUI still gets the 8 doctrine skills (the core tools). Bot is unaffected (connects MCP as before). Follow-up if MCP-in-TUI is wanted once the client teardown is fixed.
+- **Clean exit required closing the aiosqlite connections** (`sessions` + `memory`): each runs a non-daemon thread that otherwise keeps the interpreter alive after `asyncio.run` returns (the process hung until an earlier `head`/`tail` pipe-close masked it).
+**Verified:** live — `tui` default streams a real agent reply then `/exit` (rc 0); `--handoff telegram:723865496` loads the real chat history; `--handoff <unknown>` errors + rc 1; `/help`, `/version` work. `pytest tests/` 148 passed (16 new in `test_tui.py`: boot modes, handoff load/unknown, `/help`, `/new` confirm+decline, plain-message→agent, typed-confirm watcher). `ruff` clean; `tests/smoke.py` green (bot boot via `build_runtime` intact).
+**Next:** PR to `dev`. Optional: MCP tools in the TUI once `mcp_client` teardown is made cancel-safe.
+**Modified/new:** `aureon_agent/cli.py`, `aureon_agent/repl.py` (new), `aureon_agent/__main__.py`, `requirements.txt`, `tests/test_tui.py` (new), `tasks/DEVLOG.md` (this entry).
+
+---
+
+## 2026-07-19 — `/new` + `/skills` Telegram commands + `skills list` TUI (local session, branch `feat/new-skills-cmds`)
+**Did:** Added two Telegram slash commands and one CLI subcommand, reusing existing modules (no new storage).
+**Built:**
+- `session_manager.py`: `clear_session(session_id)` — `DELETE FROM messages` for the session, reset `updated_at`, keep the session row, return count cleared (0 if empty/missing). Backs `/new`.
+- `skill_loader.py`: skill dict now carries `path` (skill dir); `get_active_skills()` returns `{name, description, path}`.
+- `aureon_agent/__main__.py`: `skills` subparser + `cmd_skills_list` — loads `workspace/skills` (same path `cli.py` boots from), prints a Rich `Skill/Description/Path` table (home dir → `~`), quiets per-skill INFO logs.
+- `channels/telegram.py`: `/new` special-case sends an `InlineKeyboardMarkup` (`✅ Yes` / `❌ No`) with an undo-warning; a new `CallbackQueryHandler` → `_on_callback` (allowlist-checked; answers the callback; `new_confirm` → `clear_session("telegram:<id>")` then edits to a confirmation; `new_cancel` → "Kept current history"; foreign/unknown callbacks ignored + logged). `/skills` → `SLASH_COMMANDS["skills"]=["skills","list"]`, reusing the CLI path + MarkdownV2 code-block wrap. Help list updated.
+**Verified:** `aureon-agent skills list` prints all 8 doctrine skills (name+desc+path). `pytest tests/` 123 passed (new: `test_skills_cmd.py`; extended `test_sessions_cmd.py` with clear_session incl. missing-session; `test_telegram_slash.py` with `/new` keyboard + confirm/cancel/empty/foreign-chat/unknown-data callbacks). `ruff` clean. No secrets in any output (skills = name/desc/path; callback data is static sentinels).
+**Next:** PR to `dev`. Captain: restart bot to load the new `/new`+`/skills` handlers (CallbackQueryHandler is registered in `start()`).
+**Modified/new:** `session_manager.py`, `skill_loader.py`, `aureon_agent/__main__.py`, `channels/telegram.py`, `tests/test_sessions_cmd.py`, `tests/test_telegram_slash.py`, `tests/test_skills_cmd.py` (new), `tasks/kickoff-telegram-new-skills-cmds.md` (new), `tasks/DEVLOG.md` (this entry).
+
+---
+
+## 2026-07-18 — Rich `/status` + Telegram code-block wrap + version fix (local session, branch `feat/rich-status-cmd`)
+**Did:** Rewrote the thin `/status` (was just `systemctl status`) into a rich multi-section block mirroring the OpenClaw/Hermes status pages; fixed the Telegram table-breaking bug for all `/` commands; fixed the stale version header.
+**Built:**
+- `aureon_agent/status.py` (new): `gather_status(data_dir)` → dict of plain strings, never raises (systemctl/git/db absent → `n/a`/`unknown`); `render_status()` formats with Rich (5 sections: service+uptime, runtime/model, tokens/context, session, cron+mcp). No agent round-trip, no live LLM ping, no secrets (API key shown as presence `set`/`none` only). Reuses `SessionManager`, `CronDB`, `doctor.check_mcp_servers`. Self-contained `MODEL_CONTEXT_WINDOWS` lookup (session-compaction's fuller table isn't on this branch). `cmd_status` in `__main__.py` now delegates here.
+- `channels/telegram.py`: `_md_code_block()` + `_chunk_for_codeblock()`; `_on_command` wraps every CLI-command reply in a MarkdownV2 fenced code block (chunk first at 3900 to leave fence headroom, fence each chunk, escape `\`/`` ` ``). `send_message` gained an optional `parse_mode` (streaming reply path unchanged). Fixes `/sessions` + `/doctor` + `/status` + `/cron` + `/mcp` rendering as garbled tables in chat.
+- `aureon_agent/__init__.py`: `__version__` 0.1.0 → 0.5.1 (the stale `v0.1.0` doctor header — banner/doctor/status/version all read `__version__`, so the one bump fixes them all).
+- Tests: `tests/test_status_cmd.py` (graceful-degrade when systemctl/git absent, session section reflects a seeded `SessionManager`, no-secret assertion, empty-data-dir, render smoke, context-window lookup) + `tests/test_telegram_slash.py` (code-block fencing, backslash/backtick escaping, chunking, every-chunk-fenced).
+**Note on the wrap:** the kickoff's `f"```\n{out}\n```"` alone renders literal backticks in Telegram without a markdown `parse_mode` — implemented with `parse_mode="MarkdownV2"` + the two required escapes so it actually renders monospace.
+**Verified:** `aureon-agent status` prints the full live block (v0.5.1, real telegram session 95 msgs / 4.5% context, 3 MCP servers, uptime service+system). `doctor` + `version` now show v0.5.1. `pytest tests/` 111 passed; `ruff` clean. Telegram round-trip (visual monospace in chat) needs the bot restarted to load the new adapter — deferred to Captain.
+**Next:** PR to `dev`. Captain: restart bot to pick up the telegram.py wrap + new `/status` (and, from the prior task, the patched `download_attachment` MCP tool).
+**Modified/new:** `aureon_agent/status.py` (new), `aureon_agent/__main__.py`, `aureon_agent/__init__.py`, `channels/telegram.py`, `tests/test_status_cmd.py` (new), `tests/test_telegram_slash.py` (new), `tasks/kickoff-rich-status-cmd.md` (new), `tasks/DEVLOG.md` (this entry).
+
+---
 
 ## 2026-07-18 — Invoice auto-downloader prototype (local session, branch `feat/invoice-pilot`)
 **Did:** Built the interview-task prototype: search a Gmail inbox, recognize invoices, download attachments to a folder. Two engines on one OAuth base + a weekly scheduler. All three live-verified against the real inbox (~6500 emails).
@@ -345,3 +403,90 @@ The earlier Phase 7.1 entry (below) marked the foundation done, but the actual N
 - Authentication via `npm run auth vishal` (or `node ~/.npm-global/lib/node_modules/multi-email-mcp/src/auth.js vishal`) is pending execution from the Captain.
 - Once authenticated, the cached token will be stored in `tokens/vishal.json`, allowing the `live_test_gmail.py` to test connection successfully against the real Gmail API.
 
+## 2026-07-18 — Doctor TUI gmail fix + cron name-resolution (PR #21 prep)
+
+**Branches:** `fix/doctor-gmail-cron-name-res` → merged `dev` `5ad1d75`, `main` `60d2d13` (v0.5.1)
+
+- **Doctor TUI bug:** `check_mcp_servers` reported only `notion, github` (omitted `gmail`). Root cause: read dead `GMAIL_API_CLIENT_ID/SECRET` + `tokens/.oauth`; fixed to read `GOOGLE_OAUTH_CLIENT_ID/SECRET` matching `cli.py`. Now reports 3 servers.
+- **Cron CLI name-resolution:** `cron run/pause/resume/remove/runs` only accepted raw job IDs (e.g. `cron run invoice-weekly` → "not found"). Added `_resolve_job(db, ref)` fallback (match by `name`); all 5 commands use it.
+- Shipped v0.5.1.
+
+## 2026-07-18 — Invoice auto-downloader shipped + systemd timer dropped
+
+- Invoice-pilot built (PR #19/#20), merged to `dev`+`main` (v0.5.1). 3 engines: A `invoice_pilot.py` (broad query `rechnung OR invoice OR facture has:attachment` → 84 valid PDFs), B gmail MCP (patched `download_attachment`), C agent-cron `invoice-weekly`. Total **85 PDFs** in `~/dev-shared/docs/invoices/`.
+- **Decision (Captain):** removed `systemd/aureon-invoice.{service,timer}` — redundant non-agent duplicate; agent-cron `invoice-weekly` is the single recurrence path. Scrubbed from README + invoice doc.
+- Todo stale entries cleaned.
+
+## 2026-07-18/19 — Telegram slash commands + sessions CLI (PR #19/#20 follow-up)
+
+- `SessionManager.list_sessions()` + `aureon-agent sessions` Rich table.
+- Telegram slash commands (`/sessions /doctor /status /cron /mcp /logs /version /help`) routed inside `_on_message` via `startswith("/")` → shell out to CLI. Verified live by Captain.
+- 100 tests pass, ruff clean.
+
+## 2026-07-19 — Rich `/status` + `/new` + `/skills` (PR #21, PR #22)
+
+- **PR #21** (`feat/rich-status-cmd` → `dev` `6e82e6a`): `aureon_agent/status.py` — Rich 5-section status (service/uptime, runtime/model, tokens/context, session, cron+mcp); `gather_status()` never raises (falls back `n/a`). Fixed `doctor` stale `v0.1.0` → `0.5.1`.
+- **Telegram code-block fix:** all `/command` output wrapped in MarkdownV2 fenced code block (fixes table collapse). Uses `parse_mode="MarkdownV2"` + `\`/`` escaping (not naive backticks).
+- **PR #22** (`feat/new-skills-cmds` → `dev` `3506ca1`): `/new` inline-keyboard confirm (✅/❌) via new `CallbackQueryHandler` → `_on_callback`; `/skills` reuses CLI `skills list`; `aureon-agent skills list` Rich table via `SkillLoader` (carries `path`). 123 tests pass.
+- Mental model (`tasks/aureon-agent metal model.md`) refreshed: 57 tools (8 doctrine + 16 inline + 33 MCP), 3 MCP servers, cron scheduler, invoice downloader.
+
+## 2026-07-19 — Inline-keyboard confirmation (fixes OpenClaw-style type-yes loop)
+
+**Branch:** `feat/inline-confirm` → merged `dev` `7f9e551`
+
+- **Bug:** `confirm_with_captain()` waited for a **typed** "yes" reply (resolved via `router.pending_confirmations` future in `router.handle_message`). Same UX trap OpenClaw hit — loops on headless boxes with no GUI "Allow" button.
+- **Fix:** `confirm_with_captain` now sends an **inline Yes/No keyboard** via new `router.send_confirmation()` (Telegram `reply_markup`). `telegram._on_callback` handles `CONFIRM_YES`/`CONFIRM_NO` → resolves the pending future. `_build_confirm_keyboard` helper shared by `/new` + confirm. Typed "yes" kept as fallback. `_resolve_confirm` guarded with `getattr`.
+- Removed stale "mock the logic" comment in `confirm.py`.
+- **Tests:** `tests/test_confirm.py` (5) + telegram slash confirm callbacks (4). **132 tests pass**, ruff clean.
+- Bot restarted; destructive ops now show a tap-to-confirm button in Telegram.
+
+## 2026-07-19 — Phase 10 planned: interactive TUI agent session
+
+- Kickoff `tasks/kickoff-tui-session.md` written. Goal: Claude Code / Hermes / OpenClaw-style terminal REPL with `/commands` + boot as new session or `--handoff telegram:<id>`. Uses `prompt_toolkit` (with `input()` fallback). NOT dispatched yet — pending Captain sign-off.
+
+
+## 2026-07-19 — Interactive TUI agent session SHIPPED (PR #23 -> dev 7c599ee)
+
+**Branch:** `feat/tui-session` → merged `dev` `7c599ee`
+
+- `aureon_agent/repl.py` (NEW, 275 LoC) — async REPL driving the same `agent.run` via `cli.build_runtime()`. Boot modes: default `tui:tty`, `--handoff telegram:723865496` (loads that chat's history), `--session <id>` (resume). Uses `prompt_toolkit` (`PromptSession`, history search) with `input()` fallback.
+- `cli.build_runtime()` extracted from `cli.main()` so bot + TUI share one runtime builder.
+- `/commands` inside TUI: `help`, `new` (typed confirm + `clear_session`), `handoff`, `sessions`, `doctor`, `status`, `cron`, `mcp`, `skills`, `logs`, `version` — shell out to the same CLI handlers as Telegram.
+- `confirm_with_captain` in TUI = typed yes/no watcher (`_confirm_watcher` polls `pending_confirmations`, prompts `input()`) since no Telegram keyboard.
+- **Judgment calls (flagged by agent):** (1) REPL named `repl.py` to avoid clash with existing setup-wizard `tui.py`; (2) **MCP skipped in TUI** (`connect_mcp=False`) — `anyio` teardown crash would hang exit; TUI cannot use gmail/notion/github tools; (3) fixed TUI hang-on-exit via proper `aiosqlite`/`asyncio.run` cleanup.
+- 148 tests pass (16 new: `tests/test_tui.py`), ruff clean, smoke green.
+
+## 2026-07-19 — /sessions status column (option 3 follow-up)
+
+- `SessionManager.list_sessions()` now derives `status` from `updated_at`: `active` (<24h), `idle` (1-7d), `stale` (>7d). `cmd_sessions` Rich table shows a color-coded Status column (green/yellow/dim). Inherited by Telegram `/sessions` + REPL `/sessions`.
+- Reconciles the OpenClaw-style "I see fewer sessions than expected" confusion: aureon lists EVERY row (no silent drop) and now shows freshness at a glance.
+
+## 2026-07-20 — Thinking mode (reasoning tokens)
+**Did:** Implemented config-flagged thinking mode for the agent.
+
+**Built:**
+- `AUREON_THINKING` and `AUREON_THINKING_BUDGET` in `cli.py`.
+- `_thinking_field` in `agent_runtime.py` injects provider-correct body fragment (`reasoning_effort` for DeepSeek/Qwen, `thinking` for Claude/Gemma).
+- Extracted reasoning tokens (`reasoning_content`, `reasoning`, or `thinking`) via `_stream` into a separate callback `on_thinking`.
+- `repl.py` TUI now streams reasoning to a dim `[thinking]` block, hiding it seamlessly when standard content starts, and the banner reflects thinking status.
+- Tests written in `tests/test_thinking.py` using `unittest.IsolatedAsyncioTestCase`, mocking the SSE stream to verify payload injection and reasoning capture.
+
+**Modified:** `aureon_agent/cli.py`, `agent_runtime.py`, `aureon_agent/repl.py`, `tests/test_tui.py`.
+**Added:** `tests/test_thinking.py`.
+
+## 2026-07-20 — Cron job failures investigated + fixed (invoice-weekly 401, homelab-health-daily JSON)
+
+**Reported (Discord):** `invoice-weekly` intermittently `Ollama API error (401): Unauthorized`; `homelab-health-daily` `Extra data: line 1 column 31 (char 30)` JSON parse crash.
+
+**Root causes (verified from cron_jobs.db run history):**
+1. **401** — `cli.build_runtime` set `fallback_base_url=os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1")` with `fallback_api_key=os.getenv("OLLAMA_API_KEY")` which is EMPTY. Local Ollama (`http://127.0.0.1:11434/v1`, no auth, returns 200) briefly blipped at 09:03 → agent fell back to cloud unauthenticated → 401. At 09:04/09:05 local was back, so those runs succeeded.
+2. **Extra data** — gemma4 emits tool-call arguments with trailing prose (e.g. `{"query":"..."} and then some text`). `agent.run` did `json.loads(call["function"]["arguments"])` → raised on the trailing text. The `homelab-health` skill itself is just SKILL.md (no script); the crash is in aureon's own tool-arg parsing.
+
+**Fixes:**
+- `cli.py`: cloud fallback only enabled when BOTH `OLLAMA_CLOUD_BASE_URL` AND `OLLAMA_API_KEY` are set; otherwise `fallback_base_url=None`. No more silent unauthenticated cloud 401 on local blips.
+- `agent_runtime.py`: new `_parse_tool_args()` — strips ```json fences, extracts the FIRST balanced JSON object/array, ignores any trailing prose. Used at the tool-call dispatch site (replaces naive `json.loads`). Returns `{}` on empty/non-JSON input (no crash).
+- `tests/test_parse_tool_args.py`: 7 cases (plain, trailing prose, fences, arrays, nested, string-with-brace, empty/None).
+
+**Verified:** `python -m pytest tests/` = 159 passed (was 152), ruff clean. Fallback logic unit-checked (empty key → None; with key → cloud URL). Bot restarted (PID 515335, Application started).
+
+**Note:** Both jobs now recover on their own — invoice-weekly next Mon 09:00, homelab-health-daily next 08:00. No manual re-run needed.
