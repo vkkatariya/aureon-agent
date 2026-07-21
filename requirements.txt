@@ -13,3 +13,5 @@ croniter>=1.4
 mcp>=1.0
 pytest>=8.0
 prompt_toolkit>=3.0
+httplib2>=0.22
+google-api-python-client>=2.0
