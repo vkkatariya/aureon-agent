@@ -19,13 +19,13 @@ Before doing anything else, read in order:
 
 **Doctrine source of truth:** `workspace/` is symlinked to `~/.openclaw/workspace/`. SOUL, USER, IDENTITY, WORKFLOW, MEMORY all live there. Don't edit the symlinks. Edit the source.
 
-**Workflow source of truth:** `workflow/` is a symlink to `~/dev-shared/workflow/` (gitignored). Read `./workflow/*.md` for SESSION-WORKFLOW, AI-ROUTING, GIT-GITHUB-BLUEPRINT, agents_workflow/AI-AGENTS-ORCHESTRATION. Don't duplicate that content in this file.
+**Workflow source of truth:** `./AGENTS-WORKFLOW.md` is a symlink to `~/dev-shared/workflow/agents_workflow/AGENTS-WORKFLOW.md` (gitignored). Read it for SESSION-WORKFLOW, AI-ROUTING, GIT-GITHUB-BLUEPRINT, agents_workflow/AI-AGENTS-ORCHESTRATION. Don't duplicate that content in this file.
 
 **Don't ask permission. Just do it.**
 
 ## The 6-Rule Contract (Captain's standing order)
 
-Per `workspace/WORKFLOW.md` and `~/dev-shared/workflow/agents_workflow/AI-AGENTS-ORCHESTRATION.md`:
+Per `workspace/WORKFLOW.md` and `./AGENTS-WORKFLOW.md`:
 
 1. **Plan Node** — `workspace/tasks/todo.md` (Captain's) or `tasks/todo.md` (project) for any task with 3+ steps before any code
 2. **Subagent Strategy** — keep context focused, one track per subagent, flag research/parallel work for `delegate_task`
@@ -45,7 +45,7 @@ Plan first → verify plan (≥3 steps) → track [x] → explain (high-level) �
 - Format: `agent(<name>): <description>`
 - Push before session ends — always
 - Never commit: `.env`, secrets, `data/*.db`, `__pycache__/`
-- Per `~/dev-shared/workflow/GIT-GITHUB-BLUEPRINT.md` for full rules
+- Per `./AGENTS-WORKFLOW.md` for full rules
 
 ## Safety
 
