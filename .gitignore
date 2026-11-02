@@ -22,3 +22,6 @@ node_modules/
 .pytest_cache/
 references/tiny-openclaw/.upstream-changes/
 tokens/
+
+# Local symlink to ~/dev-shared/workflow/agents_workflow/AGENTS-WORKFLOW.md (never commit)
+AGENTS-WORKFLOW.md
