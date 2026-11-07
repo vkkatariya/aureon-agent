@@ -162,13 +162,23 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
     # An unauthenticated cloud fallback (key empty) yields 401 on every blip
     # of the local endpoint — better to fail loud than fail to a dead fallback.
     _cloud_url = os.getenv("OLLAMA_CLOUD_BASE_URL")
-    _cloud_key = os.getenv("OLLAMA_API_KEY")
+    _cloud_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OLLAMA_API_KEY")
     _fallback_base = _cloud_url if (_cloud_url and _cloud_key) else None
 
+    base_url = (
+        os.getenv("OPENROUTER_BASE_URL")
+        or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+    )
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OLLAMA_API_KEY")
+    model = (
+        os.getenv("OPENROUTER_MODEL")
+        or os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud")
+    )
+
     agent = AgentRuntime(
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-        api_key=os.getenv("OLLAMA_API_KEY"),
-        model=os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud"),
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
         skill_loader=skills,
         workspace_dir=WORKSPACE_DIR,
         memory=memory,

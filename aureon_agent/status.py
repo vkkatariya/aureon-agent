@@ -175,8 +175,8 @@ async def _session_and_cron(data_dir: str) -> tuple[dict, dict]:
 def gather_status(data_dir: str = DATA_DIR) -> dict:
     """Collect every status field as strings. Never raises; unavailable probes
     degrade to 'n/a'. No secrets — key material is reported as presence only."""
-    model = os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud")
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+    model = os.getenv("OPENROUTER_MODEL") or os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud")
+    base_url = os.getenv("OPENROUTER_BASE_URL") or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
     fallback = os.getenv("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1")
     local_time, utc_time = _local_time()
 
@@ -211,10 +211,10 @@ def gather_status(data_dir: str = DATA_DIR) -> dict:
         # B. runtime / model
         "model": model,
         "base_url": base_url,
-        "key": "set" if os.getenv("OLLAMA_API_KEY") else "none",
+        "key": "set" if (os.getenv("OPENROUTER_API_KEY") or os.getenv("OLLAMA_API_KEY")) else "none",
         "fallback": fallback,
         "execution": "direct",
-        "runtime": "ollama",
+        "runtime": "openrouter" if "openrouter" in base_url.lower() else "ollama",
         "think": os.getenv("AUREON_THINK", "off"),
         "fast": os.getenv("AUREON_FAST", "off"),
         # C. tokens / context
