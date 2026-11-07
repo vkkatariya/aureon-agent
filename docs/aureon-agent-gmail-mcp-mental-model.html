@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gmail MCP — mental model</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1B1C1D; --surface:#252527; --surface2:#2E2F31; --border:rgba(255,255,255,0.08);
+  --text:#F2F2F0; --text2:#9A9A98; --text3:#6B6B69;
+  --blue:#4A9EFF; --amber:#E8A23D; --red:#E85D5D; --green:#5FCB8C; --purple:#B18AFF;
+  --blue-bg:rgba(74,158,255,0.10); --amber-bg:rgba(232,162,61,0.10); --red-bg:rgba(232,93,93,0.10);
+  --green-bg:rgba(95,203,140,0.10); --purple-bg:rgba(177,138,255,0.10);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{background:var(--bg); color:var(--text); font-family:'Space Grotesk',sans-serif; padding:32px 20px 80px; line-height:1.55;}
+.wrap{max-width:920px; margin:0 auto;}
+.mono{font-family:'JetBrains Mono',monospace;}
+header{margin-bottom:36px;}
+h1{font-family:'Syne',sans-serif; font-weight:800; font-size:clamp(28px,4vw,40px); letter-spacing:-0.02em;}
+.sub{color:var(--text2); font-size:14px; margin-top:8px;}
+.stats{display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;}
+.stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 14px; font-size:12px; color:var(--text2);}
+.stat b{color:var(--text); font-family:'JetBrains Mono',monospace; font-weight:500;}
+.section-title{font-family:'Syne',sans-serif; font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3); margin:56px 0 18px;}
+.section-title:first-of-type{margin-top:0;}
+.hint{color:var(--text3); font-size:12px; margin:-10px 0 20px;}
+.node{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; cursor:pointer; transition:border-color .15s, background .15s;}
+.node:hover{border-color:rgba(255,255,255,0.18); background:var(--surface2);}
+.node.open{border-color:rgba(255,255,255,0.25);}
+.node-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.node-label{font-weight:600; font-size:15px;}
+.node-sub{color:var(--text2); font-size:12.5px; margin-top:4px;}
+.node-chevron{color:var(--text3); font-size:12px; transition:transform .15s; flex-shrink:0;}
+.node.open .node-chevron{transform:rotate(180deg);}
+.tag{font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:3px 8px; border-radius:6px; font-weight:500; white-space:nowrap;}
+.tag-blue{background:var(--blue-bg); color:var(--blue);}
+.tag-amber{background:var(--amber-bg); color:var(--amber);}
+.tag-red{background:var(--red-bg); color:var(--red);}
+.tag-green{background:var(--green-bg); color:var(--green);}
+.tag-purple{background:var(--purple-bg); color:var(--purple);}
+.panel{max-height:0; overflow:hidden; transition:max-height .25s ease;}
+.panel-inner{padding:16px 4px 4px; font-size:13.5px; color:var(--text2);}
+.panel-inner p{margin-bottom:10px;}
+.panel-inner code{font-family:'JetBrains Mono',monospace; font-size:12px; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; color:var(--text);}
+.panel-inner ul,.panel-inner ol{padding-left:18px; margin-bottom:10px;}
+.panel-inner li{margin-bottom:5px;}
+table.tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:10px 0;}
+table.tbl th{text-align:left; color:var(--text3); font-weight:500; padding:6px 8px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.04em;}
+table.tbl td{padding:7px 8px; border-bottom:1px solid var(--border); color:var(--text2); vertical-align:top;}
+table.tbl td:first-child{color:var(--text); font-family:'JetBrains Mono',monospace; font-size:12px;}
+.flow{display:flex; flex-direction:column; gap:0;}
+.arrow{display:flex; justify-content:center; padding:6px 0; color:var(--text3); font-size:13px;}
+.arrow::before{content:"↓";}
+.arrow-h{color:var(--text3); font-size:16px; display:flex; align-items:center; justify-content:center; padding:0 6px;}
+.core-row{display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:8px; align-items:stretch;}
+@media(max-width:760px){.core-row{grid-template-columns:1fr;} .arrow-h{transform:rotate(90deg); padding:4px 0;}}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+@media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+.steps{counter-reset:step;}
+.step{display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--border);}
+.step:last-child{border-bottom:none;}
+.step-num{counter-increment:step; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text3); width:22px; flex-shrink:0; padding-top:2px;}
+.step-num::before{content:counter(step);}
+.step-body{font-size:13.5px; color:var(--text2);}
+.step-body b{color:var(--text); font-weight:500;}
+.step-body .mono{color:var(--amber); font-size:12.5px;}
+.issue-grid{display:flex; flex-direction:column; gap:10px;}
+.issue{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; cursor:pointer;}
+.issue:hover{background:var(--surface2);}
+.issue-top{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+.issue-num{font-family:'JetBrains Mono',monospace; color:var(--red); font-size:12px;}
+.issue-title{font-weight:600; font-size:14px; flex:1; margin-left:10px;}
+.issue.open .node-chevron{transform:rotate(180deg);}
+.issue-panel{max-height:0; overflow:hidden; transition:max-height .25s ease;}
+.issue-panel-inner{padding-top:14px; font-size:13px; color:var(--text2);}
+.issue-row{display:flex; gap:8px; margin-bottom:8px;}
+.issue-row .lbl{flex-shrink:0; width:84px; font-family:'JetBrains Mono',monospace; font-size:10.5px; text-transform:uppercase; letter-spacing:0.04em; padding-top:2px;}
+.lbl-symptom{color:var(--red);}
+.lbl-cause{color:var(--amber);}
+.lbl-fix{color:var(--green);}
+.checklist{display:flex; flex-direction:column; gap:8px;}
+.check-item{display:flex; gap:10px; align-items:flex-start; font-size:13.5px; color:var(--text2);}
+.check-item .mark{color:var(--green); flex-shrink:0;}
+.foot-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;}
+@media(max-width:640px){.foot-grid{grid-template-columns:1fr;}}
+.foot-card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; font-size:12.5px;}
+.foot-card .path{font-family:'JetBrains Mono',monospace; color:var(--green); font-size:11.5px; margin-bottom:4px; word-break:break-all;}
+.foot-card .role{color:var(--text2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Gmail MCP</h1>
+  <div class="sub">OAuth 2.0 · stdio local server · mental model</div>
+  <div class="stats">
+    <div class="stat"><b>4</b> tools, read-only</div>
+    <div class="stat"><b>0</b> passwords stored</div>
+    <div class="stat"><b>8</b> issues hit &amp; fixed</div>
+    <div class="stat"><b>6000u</b>/min quota cap</div>
+  </div>
+</header>
+
+<div class="section-title">The core idea</div>
+<div class="hint">aureon-agent never touches Gmail's HTTP API or an OAuth token directly. Click a box.</div>
+<div class="flow">
+  <div class="core-row">
+    <div class="node" data-id="google"><div class="node-top"><span class="node-label">Google Gmail API</span><span class="tag tag-blue">remote</span></div><div class="node-sub">gmail.readonly scope</div></div>
+    <div class="arrow-h">⇄</div>
+    <div class="node" data-id="mcpserver"><div class="node-top"><span class="node-label">multi-email-mcp</span><span class="tag tag-amber">stdio, node</span></div><div class="node-sub">Local child process on athena</div></div>
+    <div class="arrow-h">→</div>
+    <div class="node" data-id="agent"><div class="node-top"><span class="node-label">aureon-agent</span><span class="tag tag-purple">MCPManager</span></div><div class="node-sub">→ ToolRegistry → AgentRuntime</div></div>
+  </div>
+</div>
+
+<div class="section-title">Why OAuth, not a password</div>
+<div class="two-col">
+  <div class="node" data-id="apppassword"><div class="node-top"><span class="node-label">App password</span><span class="tag tag-red">rejected</span></div><div class="node-sub">16-char secret, plaintext .env</div></div>
+  <div class="node" data-id="oauth"><div class="node-top"><span class="node-label">OAuth 2.0</span><span class="tag tag-green">chosen</span></div><div class="node-sub">Refresh token, one-click revoke</div></div>
+</div>
+
+<div class="section-title">Token vs secret</div>
+<div class="hint">Two different files, two different jobs — easy to conflate, worth being precise about.</div>
+<div class="two-col">
+  <div class="node" data-id="tokenfile"><div class="node-top"><span class="node-label">tokens/vishal.json</span><span class="tag tag-green">OAuth token</span></div><div class="node-sub">Access + refresh, auto-refreshed</div></div>
+  <div class="node" data-id="envfile"><div class="node-top"><span class="node-label">.env</span><span class="tag tag-amber">app credentials</span></div><div class="node-sub">CLIENT_ID + CLIENT_SECRET</div></div>
+</div>
+
+<div class="section-title">The package</div>
+<div class="node" data-id="package"><div class="node-top"><span class="node-label">oliverkoast/multi-email-mcp</span><span class="tag tag-blue">v0.1.0, MIT</span></div><div class="node-sub">3 alternatives evaluated and rejected first</div></div>
+
+<div class="section-title">End to end — "list my recent emails"</div>
+<div class="steps">
+  <div class="step"><span class="step-num"></span><div class="step-body"><span class="mono">cli.py</span> builds the MCP server list and spawns <span class="mono">node .../multi-email-mcp/src/server.js</span> as a stdio child process.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Server boots, reads <span class="mono">MAIL_ACCOUNTS</span> + <span class="mono">GOOGLE_OAUTH_*</span> env, loads <span class="mono">tokens/vishal.json</span>. Prints ready.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body"><b>MCPManager</b> connects and discovers 4 tools: <span class="mono">list_recent</span>, <span class="mono">search_mail</span>, <span class="mono">read_message</span>, <span class="mono">list_accounts</span>.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">LLM (via Ollama) decides to call <span class="mono">mcp_gmail_list_recent({account, limit:5})</span>.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Server calls Gmail: <span class="mono">messages.list</span> (5u) then <span class="mono">messages.get?format=metadata</span> per message (5u each) — ≈30u total.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Gmail returns real metadata → server serializes to an MCP result → LLM summarizes for Captain.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Verified live: returned Captain's actual GitHub CI-failure emails from <span class="mono">vkkatariya/aureon-agent</span>.</div></div>
+</div>
+
+<div class="node" data-id="quotatable" style="margin-top:16px;"><div class="node-top"><span class="node-label">Tool → quota cost</span><span class="tag tag-amber">reference</span></div><div class="node-sub">Read-only v1, no send tool</div></div>
+
+<div class="section-title">The OAuth dance — headless athena</div>
+<div class="hint">athena has no browser. Google's consent flow needs one. The fix was a port-forward tunnel.</div>
+<div class="steps">
+  <div class="step"><span class="step-num"></span><div class="step-body">On Mac: <span class="mono">ssh -L 32807:localhost:32807 radxa@athena</span> — forwards Mac's localhost:32807 to athena.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">On athena: set <span class="mono">MAIL_ACCOUNTS</span>, <span class="mono">GOOGLE_OAUTH_*</span> env, run <span class="mono">npm run auth vishal</span> → prints a consent URL.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Open the URL in the Mac browser, sign in, grant read-only Gmail access.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Google redirects to <span class="mono">http://localhost:32807?code=...</span> — the SSH tunnel carries it to athena's <span class="mono">auth.js</span>, which exchanges the code for tokens.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Token saved to <span class="mono">tokens/vishal.json</span> on athena (chmod 600), then copied into the bot's own <span class="mono">tokens/</span> directory.</div></div>
+</div>
+
+<div class="section-title">War stories — 8 issues, hit &amp; fixed</div>
+<div class="hint">The debugging trail. Click any to expand symptom → root cause → fix.</div>
+<div class="issue-grid" id="issues"></div>
+
+<div class="section-title">Rate limits</div>
+<div class="two-col">
+  <div class="node" data-id="ratecap"><div class="node-top"><span class="node-label">6,000 units/min/user</span><span class="tag tag-red">hard cap</span></div><div class="node-sub">~50 concurrent requests before 429</div></div>
+  <div class="node" data-id="rategap"><div class="node-top"><span class="node-label">No backoff in the package</span><span class="tag tag-amber">deferred</span></div><div class="node-sub">Confirmed gap, negligible risk this session</div></div>
+</div>
+
+<div class="section-title">Verified this session</div>
+<div class="checklist">
+  <div class="check-item"><span class="mark">✓</span>OAuth token saved and copied to the bot's tokens directory</div>
+  <div class="check-item"><span class="mark">✓</span><span class="mono">mcp list</span> → gmail connected, 4 tools</div>
+  <div class="check-item"><span class="mark">✓</span><span class="mono">mcp_gmail_list_recent</span> returned real inbox data</div>
+  <div class="check-item"><span class="mark">✓</span>77/77 tests pass, bot active with notion + github + gmail</div>
+</div>
+
+<div class="foot-grid">
+  <div class="foot-card"><div class="path">tokens/vishal.json</div><div class="role">OAuth token the bot reads — chmod 600, gitignored</div></div>
+  <div class="foot-card"><div class="path">.env</div><div class="role">GOOGLE_OAUTH_CLIENT_ID / _SECRET — chmod 600, gitignored</div></div>
+  <div class="foot-card"><div class="path">src/auth.js</div><div class="role">Patched to bind fixed port on localhost, not 127.0.0.1</div></div>
+  <div class="foot-card"><div class="path">aureon_agent/doctor.py</div><div class="role">MCP health check for all 3 servers</div></div>
+</div>
+
+</div>
+
+<script>
+const details = {
+  google: `<p>Gmail's remote HTTP API. aureon-agent never calls it directly — only the local MCP server does, over OAuth 2.0 with the <code>gmail.readonly</code> scope.</p>`,
+  mcpserver: `<p><b>multi-email-mcp</b> runs as a local stdio child process on athena. It speaks JSON-RPC over stdin/stdout. The agent never sees an OAuth token, raw HTTP, or JSON parsing — only tool calls.</p>`,
+  agent: `<p><code>MCPManager</code> discovers the server's tools, hands them to the <code>ToolRegistry</code>, and <code>AgentRuntime</code> calls them like any other tool during a ReAct round.</p>`,
+  apppassword: `<p>A Gmail App Password is a 16-character secret sitting in plaintext <code>.env</code>. Account-scoped and revocable, but still a secret-in-a-file. This was the agent's first attempt — Captain flagged it as risky and it was rejected.</p>`,
+  oauth: `<p>OAuth 2.0 with <code>gmail.readonly</code> scope: the server holds a refresh token, cached in <code>tokens/vishal.json</code> (gitignored). The mailbox password is never stored anywhere, and the token is revocable from Google Account settings in one click.</p>`,
+  tokenfile: `<p>The actual OAuth token — access + refresh, auto-refreshed by the server at runtime. Lives on athena, gitignored, chmod 600.</p>`,
+  envfile: `<p>The OAuth <i>app's</i> identity (from the Google Cloud project) — needed at runtime to refresh the token. Not the mailbox password. Also gitignored, chmod 600.</p>`,
+  package: `<p><b>oliverkoast/multi-email-mcp@0.1.0</b> — local stdio MCP server, MIT, active. Supports Gmail + Outlook from one connection (Gmail only, here).</p>
+    <table class="tbl"><tr><th>Rejected option</th><th>Why</th></tr>
+    <tr><td>gmail-mcp-imap</td><td>IMAP + plaintext App Password — the first, rejected attempt</td></tr>
+    <tr><td>mcp-server-gmail</td><td>Stray install, unused, removed</td></tr>
+    <tr><td>GongRzhe/Gmail-MCP-Server</td><td>Archived / read-only since 2026-03 — dead dependency</td></tr>
+    <tr><td>Google official Gmail MCP</td><td>Hosted / Cloud-Run remote endpoint, not stdio-on-athena — heavier, out of scope</td></tr></table>`,
+  quotatable: `<table class="tbl"><tr><th>Tool</th><th>Gmail API call</th><th>Cost</th></tr>
+    <tr><td>list_recent</td><td>messages.list + N×messages.get metadata</td><td>~30u @ limit 5</td></tr>
+    <tr><td>search_mail</td><td>messages.list?q= + gets</td><td>~30u @ limit 5</td></tr>
+    <tr><td>read_message</td><td>messages.get?format=full</td><td>5u</td></tr>
+    <tr><td>list_accounts</td><td>none — local config</td><td>0u</td></tr></table>`,
+  ratecap: `<p>Project-level cap is 1.2M/min (not the bottleneck) — the real limit is 6,000 quota units per minute per user, with an undocumented ~50 concurrent request ceiling before Gmail starts returning 429.</p>`,
+  rategap: `<p><code>multi-email-mcp</code> ships with no 429 handling, no backoff, no retry — confirmed by reading <code>gmail-api.js</code> directly. Mitigation (patch backoff, cron-only polling, cached last-check timestamp) is scoped but not yet implemented. This session used ~3 calls total — negligible exposure.</p>`,
+};
+document.querySelectorAll('.node[data-id]').forEach(node => {
+  const id = node.dataset.id;
+  if(!details[id]) return;
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = `<div class="panel-inner">${details[id]}</div>`;
+  node.after(panel);
+  node.querySelector('.node-top').insertAdjacentHTML('beforeend', '<span class="node-chevron">▾</span>');
+  node.addEventListener('click', () => {
+    const isOpen = node.classList.contains('open');
+    node.classList.toggle('open', !isOpen);
+    panel.style.maxHeight = isOpen ? '0' : panel.scrollHeight + 'px';
+  });
+});
+
+const issues = [
+  {t:"Stray IMAP packages, plaintext secret", s:"First attempt used gmail-mcp-imap with an App Password in .env, plus a stray unused mcp-server-gmail.", c:"Agent picked the easy path; Captain flagged the plaintext risk.", f:"Uninstalled both packages, removed IMAP env reads from cli.py/doctor.py, swapped to OAuth multi-email-mcp."},
+  {t:"Error 403: org_internal", s:'Google consent page: "Access blocked: can only be used within its organisation."', c:"OAuth client was type Internal (Workspace-only) — personal Gmail isn't in that org.", f:"Google Cloud Console → OAuth consent screen → User type = External, added the personal account as a test user."},
+  {t:"Redirect URI rejected", s:"Google rejected redirect_uri=http://127.0.0.1:32807 after flipping to External.", c:"127.0.0.1 is treated as a web redirect URI needing manual registration; ephemeral ports can't be pre-registered. localhost is auto-approved as loopback.", f:"Patched auth.js to bind a fixed port on localhost (32807), registered that exact URI in Google Cloud."},
+  {t:"Token never saved", s:"Consent completed but the token file was never written.", c:"The redirect hit localhost on the Mac (where the browser runs), not athena — connection refused, code never reached auth.js.", f:"SSH tunnel (ssh -L 32807:localhost:32807) so the Mac's localhost forwards to athena; also killed a zombie process holding the port."},
+  {t:'"No Gmail OAuth token cached" on bot start', s:"mcp list showed gmail with a token-not-found warning after restart.", c:"npm run auth wrote the token to the npm package's own tokens/ dir, not the bot's tokens/ dir.", f:"Copied the token file into the bot's project directory, chmod 600, confirmed gitignored."},
+  {t:"Client secret missing at runtime", s:'list_recent failed: "Provider gmail-api needs GOOGLE_OAUTH_CLIENT_ID + SECRET in .env."', c:"The token alone isn't enough — refreshing it needs the app credentials, which only existed in the Mac shell env, never on athena.", f:"Added both GOOGLE_OAUTH_* lines to the bot's .env, chmod 600, gitignored. Not the mailbox password."},
+  {t:"Broken live_test_gmail.py", s:'Agent\'s own live test printed "No Gmail credentials found. Skipping."', c:"Test checked an old IMAP-model env var (EMAIL_ADDRESS) that was never updated for OAuth — no real API call happened.", f:"Verified instead with a direct tool-call harness that called mcp_gmail_list_recent — returned real emails, proving the agent's reported pass was actually a silent skip."},
+  {t:"mcp list foreground hang", s:"python -m aureon_agent mcp list timed out at 60s in the foreground.", c:"Spinning up all 3 servers plus an anyio cancel-scope warning delays teardown/exit — not a real bug.", f:"Ran it in the background and polled the log file instead."},
+];
+const box = document.getElementById('issues');
+issues.forEach((it, i) => {
+  const el = document.createElement('div');
+  el.className = 'issue';
+  el.innerHTML = `<div class="issue-top"><span class="issue-num">#${i+1}</span><span class="issue-title">${it.t}</span><span class="node-chevron">▾</span></div>
+    <div class="issue-panel"><div class="issue-panel-inner">
+      <div class="issue-row"><span class="lbl lbl-symptom">symptom</span><span>${it.s}</span></div>
+      <div class="issue-row"><span class="lbl lbl-cause">root cause</span><span>${it.c}</span></div>
+      <div class="issue-row"><span class="lbl lbl-fix">fix</span><span>${it.f}</span></div>
+    </div></div>`;
+  box.appendChild(el);
+  const panel = el.querySelector('.issue-panel');
+  el.addEventListener('click', () => {
+    const isOpen = el.classList.contains('open');
+    el.classList.toggle('open', !isOpen);
+    panel.style.maxHeight = isOpen ? '0' : panel.scrollHeight + 'px';
+  });
+});
+</script>
+</body>
+</html>

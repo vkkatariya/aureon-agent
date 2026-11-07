@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Invoice auto-downloader — mental model</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1B1C1D; --surface:#252527; --surface2:#2E2F31; --border:rgba(255,255,255,0.08);
+  --text:#F2F2F0; --text2:#9A9A98; --text3:#6B6B69;
+  --blue:#4A9EFF; --amber:#E8A23D; --red:#E85D5D; --green:#5FCB8C; --purple:#B18AFF;
+  --blue-bg:rgba(74,158,255,0.10); --amber-bg:rgba(232,162,61,0.10); --red-bg:rgba(232,93,93,0.10);
+  --green-bg:rgba(95,203,140,0.10); --purple-bg:rgba(177,138,255,0.10);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{background:var(--bg); color:var(--text); font-family:'Space Grotesk',sans-serif; padding:32px 20px 80px; line-height:1.55;}
+.wrap{max-width:920px; margin:0 auto;}
+.mono{font-family:'JetBrains Mono',monospace;}
+header{margin-bottom:36px;}
+h1{font-family:'Syne',sans-serif; font-weight:800; font-size:clamp(26px,4vw,38px); letter-spacing:-0.02em;}
+.sub{color:var(--text2); font-size:14px; margin-top:8px;}
+.stats{display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;}
+.stat{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 14px; font-size:12px; color:var(--text2);}
+.stat b{color:var(--text); font-family:'JetBrains Mono',monospace; font-weight:500;}
+.section-title{font-family:'Syne',sans-serif; font-weight:700; font-size:15px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text3); margin:56px 0 18px;}
+.section-title:first-of-type{margin-top:0;}
+.hint{color:var(--text3); font-size:12px; margin:-10px 0 20px;}
+.node{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px 18px; cursor:pointer; transition:border-color .15s, background .15s;}
+.node:hover{border-color:rgba(255,255,255,0.18); background:var(--surface2);}
+.node.open{border-color:rgba(255,255,255,0.25);}
+.node-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.node-label{font-weight:600; font-size:15px;}
+.node-sub{color:var(--text2); font-size:12.5px; margin-top:4px;}
+.node-chevron{color:var(--text3); font-size:12px; transition:transform .15s; flex-shrink:0;}
+.node.open .node-chevron{transform:rotate(180deg);}
+.tag{font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:3px 8px; border-radius:6px; font-weight:500; white-space:nowrap;}
+.tag-blue{background:var(--blue-bg); color:var(--blue);}
+.tag-amber{background:var(--amber-bg); color:var(--amber);}
+.tag-red{background:var(--red-bg); color:var(--red);}
+.tag-green{background:var(--green-bg); color:var(--green);}
+.tag-purple{background:var(--purple-bg); color:var(--purple);}
+.panel{max-height:0; overflow:hidden; transition:max-height .25s ease;}
+.panel-inner{padding:16px 4px 4px; font-size:13.5px; color:var(--text2);}
+.panel-inner p{margin-bottom:10px;}
+.panel-inner code{font-family:'JetBrains Mono',monospace; font-size:12px; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; color:var(--text);}
+.panel-inner ul,.panel-inner ol{padding-left:18px; margin-bottom:10px;}
+.panel-inner li{margin-bottom:5px;}
+table.tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:10px 0;}
+table.tbl th{text-align:left; color:var(--text3); font-weight:500; padding:6px 8px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.04em;}
+table.tbl td{padding:7px 8px; border-bottom:1px solid var(--border); color:var(--text2); vertical-align:top;}
+table.tbl td:first-child{color:var(--text); font-family:'JetBrains Mono',monospace; font-size:12px;}
+.flow{display:flex; flex-direction:column; gap:0;}
+.arrow{display:flex; justify-content:center; padding:6px 0; color:var(--text3); font-size:13px;}
+.arrow::before{content:"↓";}
+.base-node{margin-bottom:4px;}
+.branch-wrap{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+@media(max-width:700px){.branch-wrap{grid-template-columns:1fr;}}
+.branch-connector{display:flex; justify-content:center; color:var(--text3); font-size:12px; padding:4px 0;}
+.steps{counter-reset:step;}
+.step{display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--border);}
+.step:last-child{border-bottom:none;}
+.step-num{counter-increment:step; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text3); width:22px; flex-shrink:0; padding-top:2px;}
+.step-num::before{content:counter(step);}
+.step-body{font-size:13.5px; color:var(--text2);}
+.step-body b{color:var(--text); font-weight:500;}
+.step-body .mono{color:var(--amber); font-size:12.5px;}
+.centerpiece{background:linear-gradient(180deg, rgba(95,203,140,0.08), transparent); border:1px solid rgba(95,203,140,0.25); border-radius:16px; padding:20px 22px; margin-bottom:14px;}
+.centerpiece .node-label{font-size:16px; color:var(--green);}
+.defense-list{display:flex; flex-direction:column; gap:8px; margin-top:14px;}
+.defense-item{display:flex; gap:10px; font-size:13px; color:var(--text2); align-items:flex-start;}
+.defense-item .n{color:var(--green); font-family:'JetBrains Mono',monospace; font-size:12px; flex-shrink:0; width:16px;}
+.layer-stack{display:flex; flex-direction:column; gap:8px;}
+.layer{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px; font-size:13px;}
+.layer .lname{font-family:'JetBrains Mono',monospace; color:var(--blue); font-size:11.5px; margin-right:8px;}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+@media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+table.files{width:100%; border-collapse:collapse; font-size:12.5px;}
+table.files td{padding:8px 8px; border-bottom:1px solid var(--border); color:var(--text2);}
+table.files td:first-child{color:var(--green); font-family:'JetBrains Mono',monospace; font-size:11.5px; white-space:nowrap;}
+.checklist{display:flex; flex-direction:column; gap:8px;}
+.check-item{display:flex; gap:10px; align-items:flex-start; font-size:13.5px; color:var(--text2);}
+.check-item .mark{color:var(--green); flex-shrink:0;}
+.quote-grid{display:flex; flex-direction:column; gap:10px;}
+.quote{background:var(--surface); border-left:2px solid var(--purple); border-radius:0 12px 12px 0; padding:14px 18px; font-size:13.5px; color:var(--text); font-style:normal;}
+.quote::before{content:"“"; color:var(--purple); font-family:'Syne',sans-serif; font-size:20px; margin-right:2px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Invoice auto-downloader</h1>
+  <div class="sub">3 engines, 1 OAuth base · interview prototype · mental model</div>
+  <div class="stats">
+    <div class="stat"><b>85</b> PDFs downloaded</div>
+    <div class="stat"><b>97</b> tests passing</div>
+    <div class="stat"><b>0</b> API errors on backfill</div>
+    <div class="stat"><b>3</b> layers of detection</div>
+  </div>
+</header>
+
+<div class="section-title">The shape</div>
+<div class="hint">One OAuth base (paid once), three consumers built on top of it. Click any box.</div>
+<div class="flow">
+  <div class="node base-node" data-id="oauthbase"><div class="node-top"><span class="node-label">.env + tokens/vishal.json</span><span class="tag tag-blue">OAuth base</span></div><div class="node-sub">Shared refresh_token + client creds — the hard part, paid once</div></div>
+  <div class="branch-connector">↙ ↓ ↘</div>
+  <div class="branch-wrap">
+    <div class="node" data-id="enginea"><div class="node-top"><span class="node-label">Engine A</span><span class="tag tag-amber">script</span></div><div class="node-sub">invoice_pilot.py — standalone, deterministic</div></div>
+    <div class="node" data-id="engineb"><div class="node-top"><span class="node-label">Engine B</span><span class="tag tag-purple">agent</span></div><div class="node-sub">MCP patch, driven via chat</div></div>
+    <div class="node" data-id="enginec"><div class="node-top"><span class="node-label">Engine C</span><span class="tag tag-green">cron</span></div><div class="node-sub">invoice-weekly, agent-native recurrence</div></div>
+  </div>
+</div>
+
+<div class="section-title">The gap that made engine B necessary</div>
+<div class="node" data-id="thegap"><div class="node-top"><span class="node-label">MCP could search + recognize, but not download</span><span class="tag tag-red">the real build</span></div><div class="node-sub">read_message dropped attachmentId — no tool fetched attachment bytes</div></div>
+
+<div class="section-title">Engine A — invoice_pilot.py</div>
+<div class="steps">
+  <div class="step"><span class="step-num"></span><div class="step-body">Load <span class="mono">.env</span> + <span class="mono">tokens/vishal.json</span>, build Gmail credentials, open the API client.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Query <span class="mono">subject:(invoice OR rechnung OR facture) has:attachment</span> — search-first, not a full scan.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Page messages oldest → newest, batches of 50, max 5 parallel <span class="mono">get</span> calls.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">For each attachment: type-gate the filename, then check invoice tokens in subject/snippet/body before downloading.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Decode base64, write to <span class="mono">~/dev-shared/docs/invoices/</span>, append the message id to <span class="mono">.seen.json</span>, sleep 6s.</div></div>
+</div>
+
+<div class="section-title">Engine B — MCP patch</div>
+<div class="steps">
+  <div class="step"><span class="step-num"></span><div class="step-body">Captain: "download my recent invoices" → aureon builds context and a plan.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body"><span class="mono">mcp_gmail_search_mail(query)</span> finds candidate messages.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body"><span class="mono">mcp_gmail_read_message(id)</span> — now exposes <span class="mono">attachmentId</span> after the patch.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body"><span class="mono">mcp_gmail_download_attachment(id, attId, dir)</span> fetches bytes, base64url-decodes, sanitizes the filename, writes the file.</div></div>
+  <div class="step"><span class="step-num"></span><div class="step-body">Discovered automatically by <span class="mono">MCPManager</span> once the server is patched — no <span class="mono">cli.py</span> change needed.</div></div>
+</div>
+
+<div class="section-title">Engine C — cron recurrence</div>
+<div class="node" data-id="enginecdetail"><div class="node-top"><span class="node-label">invoice-weekly</span><span class="tag tag-green">0 9 * * 1, Europe/Berlin</span></div><div class="node-sub">Reuses engine B's tools as an agent turn — no new execution path</div></div>
+
+<div class="section-title">Rate-limit defense — the centerpiece</div>
+<div class="centerpiece">
+  <div class="node-top"><span class="node-label">Zero 429s across a 6,500-email backfill</span><span class="tag tag-green">defense in depth</span></div>
+  <div class="defense-list">
+    <div class="defense-item"><span class="n">01</span>Batch 50 messages, sleep 6s between batches → ~5,000 units/min, under the 6,000 cap</div>
+    <div class="defense-item"><span class="n">02</span>429 → honor <span class="mono">Retry-After</span>, else exponential backoff 1s→2s→4s… capped at 30s, max 5 retries, resume not restart</div>
+    <div class="defense-item"><span class="n">03</span>Max 5 parallel <span class="mono">get</span> calls — well under the ~50 concurrent hidden limit</div>
+    <div class="defense-item"><span class="n">04</span><span class="mono">.seen.json</span> checkpoint every batch → crash-safe resume</div>
+    <div class="defense-item"><span class="n">05</span>Search-first query (<span class="mono">has:attachment</span> + subject tokens) → ~20× fewer calls than scanning everything</div>
+  </div>
+</div>
+<div class="node" data-id="backfillmath"><div class="node-top"><span class="node-label">The math</span><span class="tag tag-amber">~3000u total</span></div><div class="node-sub">6,500 emails → ~300 invoice candidates → spread over throttled batches</div></div>
+
+<div class="section-title">Invoice detection — 3 layers</div>
+<div class="layer-stack">
+  <div class="layer"><span class="lname">layer 1</span>Gmail query — <span class="mono">subject:(invoice OR rechnung OR facture) has:attachment</span></div>
+  <div class="layer"><span class="lname">layer 2</span>Filename type gate — <span class="mono">.pdf / .png / .jpg</span></div>
+  <div class="layer"><span class="lname">layer 3</span>Invoice token in subject, snippet, or body</div>
+</div>
+<div class="two-col" style="margin-top:12px;">
+  <div class="node" data-id="defaultmode"><div class="node-top"><span class="node-label">Default</span><span class="tag tag-blue">looser</span></div><div class="node-sub">Token anywhere — filename or content</div></div>
+  <div class="node" data-id="strictmode"><div class="node-top"><span class="node-label">--strict</span><span class="tag tag-amber">tighter</span></div><div class="node-sub">Token must be in the filename itself</div></div>
+</div>
+
+<div class="section-title">Backfill + cron window strategy</div>
+<div class="node" data-id="backfillsplit"><div class="node-top"><span class="node-label">Time-split backfill, then flat weekly cost</span><span class="tag tag-purple">strategy</span></div><div class="node-sub">Split by time boundary, not raw message count — IDs ≠ chronological order</div></div>
+
+<div class="section-title">Files</div>
+<table class="files">
+  <tr><td>invoice_pilot.py</td><td>Engine A — standalone downloader, 433 LoC</td></tr>
+  <tr><td>tests/test_invoice_pilot.py</td><td>20 tests — detection, backoff, throttle, dedup, dry-run</td></tr>
+  <tr><td>mcp-patches/*.patch</td><td>Engine B — staged patch applied to the global npm module</td></tr>
+  <tr><td>scripts/seed-invoice-cron.sh</td><td>Engine C — registers the invoice-weekly cron job</td></tr>
+  <tr><td>tokens/vishal.json, .env</td><td>OAuth base — gitignored, chmod 600</td></tr>
+</table>
+
+<div class="section-title">Verified this session</div>
+<div class="checklist">
+  <div class="check-item"><span class="mark">✓</span>Engine A dry-run found 2 real candidates, 0 false positives, no 429</div>
+  <div class="check-item"><span class="mark">✓</span>Engine B live test downloaded a real 75KB PDF via aureon's MCPManager</div>
+  <div class="check-item"><span class="mark">✓</span>Engine C's invoice-weekly cron job active, next run in ~2 days</div>
+  <div class="check-item"><span class="mark">✓</span>97 pytest pass (77 existing + 20 new), ruff clean, CI green</div>
+</div>
+
+<div class="section-title">Interview framing — what to say</div>
+<div class="quote-grid">
+  <div class="quote">OAuth 2.0, not app passwords — mailbox password never stored.</div>
+  <div class="quote">Invoice recognition is a deterministic heuristic — Gmail search + filename + body regex, not an LLM. Faster, cheaper, reproducible.</div>
+  <div class="quote">Rate-limit engineering: batched, throttled, exponential backoff with checkpoint-resume — backfills 6,500 emails with zero API errors.</div>
+  <div class="quote">Idempotent via <span class="mono">.seen.json</span>, plus dry-run — safe to re-run at any time.</div>
+  <div class="quote">Two engines on one OAuth base: a standalone script for the workflow phrasing, an MCP tool driven by my AI agent for the agent phrasing — covers both readings of the task.</div>
+  <div class="quote">Backfill-then-incremental: the weekly cron scans 90 days once, then 7 days after that — flat cost going forward.</div>
+  <div class="quote">Full source, full tests, live-verified against my own inbox — not mocked.</div>
+</div>
+
+</div>
+
+<script>
+const details = {
+  oauthbase: `<p>The hard part — the Gmail OAuth dance — was paid once, earlier. All three engines reuse the same <code>refresh_token</code> and client credentials. Nobody stores the mailbox password; OAuth 2.0 only.</p>`,
+  enginea: `<p>Self-contained script, no agent, no MCP. Talks to the Gmail REST API directly via the OAuth refresh token. Deterministic, used for bulk backfill and <code>--dry-run</code> verification.</p>`,
+  engineb: `<p>Patches <code>multi-email-mcp</code> to add a <code>download_attachment</code> tool the package was missing. The agent chains <code>search_mail → read_message → download_attachment</code> as a live chat turn.</p>`,
+  enginec: `<p>Registered via <code>aureon-agent cron create</code>. The only retained scheduler — an earlier standalone systemd-timer variant was dropped because it bypassed the agent runtime and duplicated the same work outside it.</p>`,
+  thegap: `<p><code>multi-email-mcp</code> could search and recognize invoices out of the box, but <code>read_message</code> returned attachment metadata (filename, contentType, size) while dropping <code>attachmentId</code> — and no tool fetched the actual attachment bytes. The IMAP provider had a <code>download</code> call, but that provider was rejected for storing a plaintext password. So: search + recognize was free. Download was the one thing that actually needed to be built.</p>`,
+  enginecdetail: `<p>The cron prompt drives engine B's MCP tools as a normal agent turn — the LLM chains search → read → download across multiple rounds, then delivers a Telegram summary. Live-proven: chained 4 rounds and saved a real 75KB PDF.</p>`,
+  backfillmath: `<p>~6,500 emails scanned → ~300 invoice candidates after the search-first query → roughly 300 <code>get</code> calls + 300 attachment fetches ≈ 3,000 quota units total, spread across throttled batches. Zero 429 risk — the throttling is belt-and-suspenders on top of math that already fits comfortably under the cap.</p>`,
+  defaultmode: `<p>Catches invoices with a generic subject line (e.g. "Your monthly statement") by checking the token in the subject, snippet, or body — not just the filename.</p>`,
+  strictmode: `<p>Requires the invoice token to appear in the attachment's filename itself. Drops casual photos (like <code>IMG_1234.jpg</code>) that happen to arrive in an email with "Rechnung" in the subject.</p>`,
+  backfillsplit: `<p>The 6,500-email backlog was split by a time boundary — oldest-to-midpoint handled by one engine, midpoint-to-newest by the other — because message IDs don't sort chronologically. Both engines write to the same <code>.seen.json</code>, so there's no overlap or double-download across the split. Once caught up, the cron narrows its window: first run scans <code>newer_than:90d</code> as a catch-up, every run after that is <code>newer_than:7d</code> — a flat weekly cost tracked in <code>.cron-state.json</code>.</p>`,
+};
+document.querySelectorAll('.node[data-id]').forEach(node => {
+  const id = node.dataset.id;
+  if(!details[id]) return;
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  panel.innerHTML = `<div class="panel-inner">${details[id]}</div>`;
+  node.after(panel);
+  node.querySelector('.node-top').insertAdjacentHTML('beforeend', '<span class="node-chevron">▾</span>');
+  node.addEventListener('click', () => {
+    const isOpen = node.classList.contains('open');
+    node.classList.toggle('open', !isOpen);
+    panel.style.maxHeight = isOpen ? '0' : panel.scrollHeight + 'px';
+  });
+});
+</script>
+</body>
+</html>

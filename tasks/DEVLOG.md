@@ -2,7 +2,23 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
-## 2026-07-20 — TUI polished chrome (lighter Claude/Hermes style)
+## 2026-11-07 — OpenRouter provider integration (branch `feat/openrouter-provider`)
+**Did:** Added support for OpenRouter base URL, model, and API key environment variables (`OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`, `OPENROUTER_API_KEY`) across the configuration, runtime, and doctor checks, maintaining backward-compatible fallback to `OLLAMA_*`.
+
+**Built:**
+- `aureon_agent/config.py`: added `OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`, `OPENROUTER_API_KEY` attributes, helper properties (`base_url`, `model`, `api_key`), redaction, and validation.
+- `aureon_agent/cli.py`: reads `OPENROUTER_*` variables with fallback to `OLLAMA_*`.
+- `aureon_agent/status.py`: detects and renders `openrouter` runtime and key status.
+- `aureon_agent/doctor.py`: tests endpoint reachability with Authorization header if API key is present.
+- `tests/test_config.py`: unit tests for `OPENROUTER_*` parsing, properties, and redaction.
+
+**Verified:**
+- `pytest tests/`: 160 passed.
+- `ruff check`: clean.
+- Live test: streaming completion with `nvidia/nemotron-3-ultra-550b-a55b:free` via OpenRouter endpoint succeeded with HTTP 200.
+- Restarted `aureon-agent.service` via SIGKILL to PID; systemd cleanly respawned new process.
+
+**Modified:** `aureon_agent/config.py`, `aureon_agent/cli.py`, `aureon_agent/status.py`, `aureon_agent/doctor.py`, `tests/test_config.py`, `tasks/DEVLOG.md`.
 **Did:** Upgraded the interactive TUI (`aureon_agent/repl.py`) with a polished Rich banner and `/help` menu, matching Claude Code / Hermes aesthetics but lighter (no new dependencies, Rich-only, no pixel art).
 
 **Built:**
