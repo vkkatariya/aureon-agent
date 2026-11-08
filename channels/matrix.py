@@ -23,17 +23,24 @@ from mautrix.client import Client
 from mautrix.types import EventType, Membership, UserID
 
 from channels.base import Channel
+from channels.router import BUTTON_HINT
 from channels.telegram import SLASH_COMMANDS
 
 logger = logging.getLogger(__name__)
 
 MATRIX_MAX_LEN = 15000          # split outbound messages above this
+MATRIX_EDIT_MAX_LEN = 6000      # an m.replace edit carries 4 copies of the text (64KB event cap)
+NEW_CONFIRM_TTL = 120           # seconds a !new confirmation stays pending
+RECONNECT_MIN_SECONDS = 5
+RECONNECT_MAX_SECONDS = 60
+DEFAULT_PICKLE_KEY = "aureon-agent"   # override with MATRIX_PICKLE_KEY
 EDIT_THROTTLE_SECONDS = 1.0
 DEDUPE_CACHE_SIZE = 1000
 TYPING_TIMEOUT_MS = 10000
 COMMAND_PREFIXES = ("!", "/")
 CONFIRM_REACTIONS = {"✅": "yes", "👍": "yes", "❌": "no", "👎": "no"}
 YES_WORDS = {"yes", "y", "confirm"}
+KNOWN_COMMANDS = set(SLASH_COMMANDS) | {"help", "new", "lesson"}
 
 HELP_COMMANDS = [
     ("new", "start a new session (clears history)"),
@@ -100,7 +107,7 @@ def parse_allowed_users(value) -> set:
 class MatrixChannel(Channel):
     def __init__(self, homeserver, user_id, access_token, router, allowed_users,
                  device_id="AUREON_ARM64", home_room=None, encryption=True,
-                 data_dir="data"):
+                 data_dir="data", pickle_key=None):
         self.homeserver = homeserver
         self.user_id = user_id
         self.access_token = access_token
@@ -110,21 +117,52 @@ class MatrixChannel(Channel):
         self.encryption = encryption
         self.router = router
         self.data_dir = data_dir
+        self.pickle_key = pickle_key or os.getenv("MATRIX_PICKLE_KEY") or DEFAULT_PICKLE_KEY
 
         self.client = None
         self._crypto_db = None
         self._state_db = None
         self._seen = OrderedDict()           # event_id dedupe cache
         self._edit_locks = {}
-        self._pending_new = set()            # rooms awaiting !new confirmation
+        self._pending_new = {}               # room_id -> monotonic expiry for !new
+        self._confirm_events = {}            # room_id -> event_id of the open confirmation prompt
         self._sync_task = None
+        self._supervisor = None
+        self._stopping = False
         self._started_ms = 0
         self._drop_old_events = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────
 
     async def start(self):
+        """Begin (and keep alive) the Matrix connection. Returns immediately;
+        a supervisor task connects, runs the sync loop, and reconnects with
+        backoff if startup fails (e.g. Tailscale not up yet) or sync dies."""
         self._started_ms = int(time.time() * 1000)
+        self._stopping = False
+        self._supervisor = asyncio.ensure_future(self._run_forever())
+
+    async def _run_forever(self):
+        delay = RECONNECT_MIN_SECONDS
+        while not self._stopping:
+            try:
+                await self._connect()
+                delay = RECONNECT_MIN_SECONDS
+                await self._sync_task
+                if not self._stopping:
+                    logger.error("matrix: sync loop ended unexpectedly; reconnecting")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("matrix: connection failed: %s — retrying in %ds", e, delay)
+            finally:
+                await self._teardown()
+            if self._stopping:
+                break
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, RECONNECT_MAX_SECONDS)
+
+    async def _connect(self):
         sync_store = None
         state_store = None
         crypto_store = None
@@ -140,14 +178,19 @@ class MatrixChannel(Channel):
             url = f"sqlite:{db_path}"
             self._crypto_db = Database.create(url, upgrade_table=PgCryptoStore.upgrade_table)
             self._state_db = Database.create(url, upgrade_table=PgStateStore.upgrade_table)
-            await self._crypto_db.start()
-            await self._state_db.start()
+            old_umask = os.umask(0o077)  # DB + -wal/-shm are created owner-only
             try:
-                os.chmod(db_path, 0o600)
-            except OSError:
-                pass
+                await self._crypto_db.start()
+                await self._state_db.start()
+            finally:
+                os.umask(old_umask)
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.chmod(db_path + suffix, 0o600)
+                except OSError:
+                    pass
             crypto_store = PgCryptoStore(
-                account_id=self.user_id, pickle_key="aureon-agent", db=self._crypto_db,
+                account_id=self.user_id, pickle_key=self.pickle_key, db=self._crypto_db,
             )
             state_store = PgStateStore(self._state_db)
             sync_store = crypto_store
@@ -191,7 +234,6 @@ class MatrixChannel(Channel):
         self.client.add_event_handler(EventType.REACTION, self._on_reaction)
 
         self._sync_task = asyncio.ensure_future(self.client.start(None))
-        self._sync_task.add_done_callback(self._on_sync_done)
         logger.info("matrix: started as %s (device %s, e2ee=%s, %d allowed user(s))",
                     self.user_id, self.device_id, self.encryption, len(self.allowed_users))
 
@@ -205,37 +247,45 @@ class MatrixChannel(Channel):
         except Exception as e:
             logger.warning("matrix: key upload failed: %s", e)
 
-    @staticmethod
-    def _on_sync_done(task):
-        if task.cancelled():
-            return
-        exc = task.exception()
-        if exc:
-            logger.error("matrix: sync loop ended with error: %s", exc)
-
-    async def stop(self):
-        if self.client is not None:
+    async def _teardown(self):
+        """Release client, sync task and DBs. Idempotent; used between
+        reconnect attempts and on stop()."""
+        client, self.client = self.client, None
+        sync_task, self._sync_task = self._sync_task, None
+        dbs, self._crypto_db, self._state_db = (self._crypto_db, self._state_db), None, None
+        if client is not None:
             try:
-                self.client.stop()
+                client.stop()
             except Exception as e:
                 logger.debug("matrix: client.stop failed: %s", e)
-        if self._sync_task is not None:
-            self._sync_task.cancel()
+        if sync_task is not None:
+            sync_task.cancel()
             try:
-                await self._sync_task
-            except BaseException:  # noqa: BLE001 — cancel/any sync error on shutdown
+                await sync_task
+            except BaseException:  # noqa: BLE001 — cancel/any sync error on teardown
                 pass
-        for db in (self._crypto_db, self._state_db):
+        for db in dbs:
             if db is not None:
                 try:
                     await db.stop()
                 except Exception as e:
                     logger.debug("matrix: db stop failed: %s", e)
-        if self.client is not None:
+        if client is not None:
             try:
-                await self.client.api.session.close()
+                await client.api.session.close()
             except Exception as e:
                 logger.debug("matrix: session close failed: %s", e)
+
+    async def stop(self):
+        self._stopping = True
+        if self._supervisor is not None:
+            self._supervisor.cancel()
+            try:
+                await self._supervisor
+            except BaseException:  # noqa: BLE001 — cancelled on shutdown
+                pass
+            self._supervisor = None
+        await self._teardown()
 
     # ── outbound ──────────────────────────────────────────────────────────
 
@@ -262,7 +312,7 @@ class MatrixChannel(Channel):
         return first
 
     async def edit_message(self, chat_id, message_id, text):
-        text = (text or "…")[:MATRIX_MAX_LEN]
+        text = (text or "…")[:MATRIX_EDIT_MAX_LEN]
         new_content = self._content(text)
         content = {
             "msgtype": "m.text",
@@ -274,8 +324,19 @@ class MatrixChannel(Channel):
         }
         try:
             await self.client.send_message_event(chat_id, EventType.ROOM_MESSAGE, content)
+            return True
         except Exception as e:
-            logger.debug("matrix: edit_message skipped for %s/%s: %s", chat_id, message_id, e)
+            logger.warning("matrix: edit_message failed for %s/%s: %s", chat_id, message_id, e)
+            return False
+
+    async def send_confirmation(self, chat_id, text, confirm_data, cancel_data):
+        """Native confirmation prompt (ChannelRouter.send_confirmation delegates
+        here). Answer by typing yes/no, or by reacting ✅/❌ to *this* message."""
+        body = text.replace(BUTTON_HINT, "").rstrip()
+        body += "\n\nReply **yes** to proceed or **no** to deny, or react ✅ / ❌ to this message."
+        event_id = await self.send_message(chat_id, body)
+        self._confirm_events[str(chat_id)] = str(event_id)
+        return event_id
 
     async def send_action(self, chat_id, action):
         if action == "typing":
@@ -338,7 +399,12 @@ class MatrixChannel(Channel):
         answer = CONFIRM_REACTIONS.get((getattr(relates, "key", "") or "").strip("️"))
         if answer is None:
             return
-        self._resolve_confirm(str(evt.room_id), answer)
+        room_id = str(evt.room_id)
+        target = getattr(relates, "event_id", None)
+        if target is None or str(target) != self._confirm_events.get(room_id):
+            return  # reaction on some other message — not an answer to the prompt
+        if self._resolve_confirm(room_id, answer):
+            self._confirm_events.pop(room_id, None)
 
     def _resolve_confirm(self, room_id, result) -> bool:
         pending = getattr(self.router, "pending_confirmations", None) or {}
@@ -376,19 +442,38 @@ class MatrixChannel(Channel):
             return
         room_id = str(evt.room_id)
 
-        if room_id in self._pending_new:
-            self._pending_new.discard(room_id)
+        expiry = self._pending_new.pop(room_id, None)
+        if expiry is not None and time.monotonic() < expiry:
             await self._finish_new(room_id, text)
             return
 
         parsed = parse_command(text)
         if parsed is not None:
-            await self._on_command(room_id, *parsed)
-            return
+            cmd, args = parsed
+            # `!` is unambiguously a command; a leading `/` only is when it names
+            # a known command (so "/etc/fstab why..." still reaches the LLM).
+            if text.lstrip().startswith("!") or cmd in KNOWN_COMMANDS:
+                await self._on_command(room_id, cmd, args)
+                return
 
         await self._on_chat(room_id, text)
 
+    def _has_pending_prompt(self, room_id) -> bool:
+        session = f"matrix:{room_id}"
+        for name in ("pending_confirmations", "pending_clarifications"):
+            fut = (getattr(self.router, name, None) or {}).get(session)
+            if fut is not None and not fut.done():
+                return True
+        return False
+
     async def _on_chat(self, room_id, text):
+        if self._has_pending_prompt(room_id):
+            # The reply answers an open confirmation/clarification; the router
+            # consumes it (returns None), so don't post a placeholder for it.
+            await self.router.handle_message("matrix", room_id, text, {})
+            self._confirm_events.pop(room_id, None)
+            return
+
         placeholder = await self.send_message(room_id, "…")
         lock = self._edit_locks.setdefault(room_id, asyncio.Lock())
         state = {"text": "", "last_edit": 0.0}
@@ -422,8 +507,10 @@ class MatrixChannel(Channel):
                 await self.edit_message(room_id, placeholder, "(no response)")
             return
 
-        chunks = chunk_text(response)
-        await self.edit_message(room_id, placeholder, chunks[0])
+        # Edits carry 4 copies of the text, so the first chunk uses the smaller edit cap.
+        chunks = chunk_text(response, MATRIX_EDIT_MAX_LEN)
+        if not await self.edit_message(room_id, placeholder, chunks[0]):
+            await self.send_message(room_id, chunks[0])  # never lose the final answer
         for chunk in chunks[1:]:
             await self.send_message(room_id, chunk)
 
@@ -439,7 +526,7 @@ class MatrixChannel(Channel):
             return
 
         if cmd == "new":
-            self._pending_new.add(room_id)
+            self._pending_new[room_id] = time.monotonic() + NEW_CONFIRM_TTL
             await self.send_message(
                 room_id,
                 f"Start a new session? This clears the current chat history "

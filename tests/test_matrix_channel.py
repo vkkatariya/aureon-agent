@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from mautrix.types import EventType, Membership
 
 from channels import matrix as mx
+from channels.router import BUTTON_HINT
 from channels.matrix import MatrixChannel, chunk_text, code_block_html, md_to_html, parse_command
 
 BOT = "@aureon-agent:example.org"
@@ -292,17 +293,45 @@ def test_typed_yes_resolves_pending_confirmation_via_router():
     assert ch.router.calls == [("matrix", ROOM, "yes")]
 
 
-def test_reaction_resolves_pending_confirmation():
+def _reaction(room, event_id, target, key="✅", sender=OWNER):
+    return SimpleNamespace(sender=sender, room_id=room, event_id=event_id,
+                           content=SimpleNamespace(relates_to=SimpleNamespace(key=key, event_id=target)))
+
+
+def test_reaction_on_confirmation_prompt_resolves():
     async def go():
         router = FakeRouter()
         ch = make(router=router)
         fut = asyncio.get_running_loop().create_future()
         router.pending_confirmations[f"matrix:{ROOM}"] = fut
-        evt = SimpleNamespace(sender=OWNER, room_id=ROOM, event_id="$r1",
-                              content=SimpleNamespace(relates_to=SimpleNamespace(key="✅")))
-        await ch._on_reaction(evt)
+        prompt_id = await ch.send_confirmation(ROOM, "⚠️ delete?\n\n" + BUTTON_HINT, "y", "n")
+        await ch._on_reaction(_reaction(ROOM, "$r1", prompt_id, "✅"))
         return fut.result()
     assert run(go()) == "yes"
+
+
+def test_reaction_no_denies():
+    async def go():
+        router = FakeRouter()
+        ch = make(router=router)
+        fut = asyncio.get_running_loop().create_future()
+        router.pending_confirmations[f"matrix:{ROOM}"] = fut
+        prompt_id = await ch.send_confirmation(ROOM, "sure?", "y", "n")
+        await ch._on_reaction(_reaction(ROOM, "$r1", prompt_id, "❌"))
+        return fut.result()
+    assert run(go()) == "no"
+
+
+def test_reaction_on_other_message_does_not_confirm():
+    async def go():
+        router = FakeRouter()
+        ch = make(router=router)
+        fut = asyncio.get_running_loop().create_future()
+        router.pending_confirmations[f"matrix:{ROOM}"] = fut
+        await ch.send_confirmation(ROOM, "sure?", "y", "n")
+        await ch._on_reaction(_reaction(ROOM, "$r1", "$some-other-message", "✅"))
+        return fut.done()
+    assert run(go()) is False
 
 
 def test_reaction_from_stranger_ignored():
@@ -311,8 +340,96 @@ def test_reaction_from_stranger_ignored():
         ch = make(router=router)
         fut = asyncio.get_running_loop().create_future()
         router.pending_confirmations[f"matrix:{ROOM}"] = fut
-        evt = SimpleNamespace(sender="@stranger:example.org", room_id=ROOM, event_id="$r2",
-                              content=SimpleNamespace(relates_to=SimpleNamespace(key="✅")))
-        await ch._on_reaction(evt)
+        prompt_id = await ch.send_confirmation(ROOM, "sure?", "y", "n")
+        await ch._on_reaction(_reaction(ROOM, "$r2", prompt_id, sender="@stranger:example.org"))
         return fut.done()
     assert run(go()) is False
+
+
+def test_confirmation_prompt_text_has_no_button_hint():
+    ch = make()
+    run(ch.send_confirmation(ROOM, "⚠️ Confirm\nTarget: Tape backup\n\n" + BUTTON_HINT, "y", "n"))
+    body = ch.client.events[0][2]["body"]
+    assert "Tape backup" in body and "Tap ✅" not in body
+    assert "yes" in body.lower()
+
+
+def test_reply_to_pending_confirmation_posts_no_placeholder():
+    async def go():
+        router = FakeRouter(response=None)
+        ch = make(router=router)
+        fut = asyncio.get_running_loop().create_future()
+        router.pending_confirmations[f"matrix:{ROOM}"] = fut
+        await ch._on_message(msg(body="yes"))
+        return ch, router
+    ch, router = run(go())
+    assert router.calls == [("matrix", ROOM, "yes")]
+    assert ch.client.events == []          # no "…" and no "(no response)"
+
+
+# ── edits / chunking ──────────────────────────────────────────────────────
+
+def test_edit_text_capped_for_event_size():
+    ch = make()
+    run(ch.edit_message(ROOM, "$ev0", "x" * 50000))
+    new = ch.client.events[0][2]["m.new_content"]["body"]
+    assert len(new) == mx.MATRIX_EDIT_MAX_LEN
+
+
+def test_failed_final_edit_falls_back_to_new_message():
+    class FailEdits(FakeClient):
+        async def send_message_event(self, room_id, event_type, content):
+            if "m.relates_to" in content:
+                raise RuntimeError("M_TOO_LARGE")
+            return await super().send_message_event(room_id, event_type, content)
+    ch = make(router=FakeRouter(response="the final answer"))
+    ch.client = FailEdits()
+    run(ch._on_message(msg(body="hello")))
+    assert sent_bodies(ch)[-1] == "the final answer"
+
+
+# ── !new TTL / command fallthrough ────────────────────────────────────────
+
+def test_new_confirmation_expires():
+    ch = make()
+    run(ch._on_message(msg(body="!new")))
+    ch._pending_new[ROOM] = 0.0          # long expired
+    run(ch._on_message(msg(body="what is the weather")))
+    assert ch.router.sessions.cleared == []
+    assert ch.router.calls == [("matrix", ROOM, "what is the weather")]
+
+
+def test_slash_path_message_reaches_llm_but_bang_unknown_does_not():
+    ch = make()
+    run(ch._on_message(msg(body="/etc/fstab why is this wrong")))
+    assert ch.router.calls == [("matrix", ROOM, "/etc/fstab why is this wrong")]
+    run(ch._on_message(msg(body="!bogus")))
+    assert len(ch.router.calls) == 1
+    assert "Unknown command" in sent_bodies(ch)[-1]
+
+
+# ── supervisor ────────────────────────────────────────────────────────────
+
+def test_supervisor_retries_after_connect_failure(monkeypatch):
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+    monkeypatch.setattr(mx, "RECONNECT_MAX_SECONDS", 0.02)
+
+    async def go():
+        ch = make()
+        attempts = []
+
+        async def flaky_connect():
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ConnectionError("tailscale not up")
+            ch._sync_task = asyncio.ensure_future(asyncio.sleep(60))
+
+        ch._connect = flaky_connect
+        await ch.start()
+        for _ in range(100):
+            if len(attempts) >= 3:
+                break
+            await asyncio.sleep(0.02)
+        await ch.stop()
+        return len(attempts)
+    assert run(go()) >= 3

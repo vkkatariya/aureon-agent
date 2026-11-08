@@ -61,3 +61,15 @@ def test_router_module_does_not_import_telegram():
     src = open(mod.__file__).read()
     assert "from telegram" not in src and "import telegram" not in src
     assert "channels.router" in sys.modules
+
+
+def test_plain_fallback_keeps_lines_containing_tap():
+    from channels.router import BUTTON_HINT
+    r = _router()
+    ch = _PlainChannel()
+    r.register("discord", ch)
+    prompt = f"⚠️ Confirm\nDelete tap-config.yml and Tape backup\n\n{BUTTON_HINT}"
+    asyncio.run(r.send_confirmation("discord:1", prompt, "a", "b"))
+    text = ch.sent[0][1]
+    assert "tap-config.yml" in text and "Tape backup" in text
+    assert BUTTON_HINT not in text

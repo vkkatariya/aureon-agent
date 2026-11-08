@@ -7,6 +7,10 @@ from lessons import append_lesson
 
 logger = logging.getLogger(__name__)
 
+# Button-oriented instruction appended by confirm_with_captain; stripped for
+# channels without inline buttons (exact match, never a substring line filter).
+BUTTON_HINT = "Tap ✅ Yes to proceed, or ❌ No to deny."
+
 
 class ChannelRouter:
     def __init__(self, agent_runtime, session_manager, workspace_dir):
@@ -62,8 +66,7 @@ class ChannelRouter:
     @staticmethod
     def _plain_confirmation_text(text):
         """Swap the button-oriented instruction for a typed-reply one."""
-        lines = [ln for ln in text.splitlines() if "Tap" not in ln]
-        body = "\n".join(lines).rstrip()
+        body = text.replace(BUTTON_HINT, "").rstrip()
         return f"{body}\n\nReply **yes** to proceed or **no** to deny."
 
     async def handle_message(self, channel_name, client_id, text, callbacks):

@@ -197,26 +197,25 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
 
     # Connect configured MCP servers (fail soft — log warning, continue without)
     if connect_mcp:
-        for server_cfg in _parse_mcp_servers():
-            # Bounded wait: a stalled server (e.g. Notion list_tools never
-            # answering) must not block channel startup. wait_for cannot cancel
-            # the anyio-based stdio client, so wait on the task instead and let
-            # a late server keep connecting in the background (its tools are
-            # not exposed until the next restart).
-            name = server_cfg["server_name"]
-            task = asyncio.ensure_future(mcp_manager.add_server(**server_cfg))
-            done, _pending = await asyncio.wait({task}, timeout=MCP_CONNECT_TIMEOUT)
-            if not done:
-                logger.warning("MCP server '%s' not ready after %ds — continuing without it",
-                               name, MCP_CONNECT_TIMEOUT)
-                continue
-            if task.exception() is not None:
-                logger.error("MCP server '%s' failed: %r — continuing without it",
-                             name, task.exception())
-                continue
-            if task.result():
-                logger.info("MCP server '%s' connected (%d tools)",
-                            name, len(mcp_manager.clients[name].tools))
+        # Connect all servers concurrently under one bounded wait: a stalled
+        # server must not block channel startup (or each other).
+        tasks = {cfg["server_name"]: asyncio.ensure_future(mcp_manager.add_server(**cfg))
+                 for cfg in _parse_mcp_servers()}
+        if tasks:
+            _done, pending = await asyncio.wait(set(tasks.values()), timeout=MCP_CONNECT_TIMEOUT)
+            for name, task in tasks.items():
+                if task in pending:
+                    logger.warning("MCP server '%s' not ready after %ds — continuing without it",
+                                   name, MCP_CONNECT_TIMEOUT)
+                    task.cancel()
+                    # Retrieve the outcome so a late cancel/anyio error isn't "never retrieved".
+                    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+                elif task.exception() is not None:
+                    logger.error("MCP server '%s' failed: %r — continuing without it",
+                                 name, task.exception())
+                elif task.result():
+                    logger.info("MCP server '%s' connected (%d tools)",
+                                name, len(mcp_manager.clients[name].tools))
 
     # ── Tool registry ─────────────────────────────────────────────
     registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)

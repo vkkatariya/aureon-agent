@@ -130,3 +130,20 @@ def test_matrix_file_roundtrip():
         assert loaded.MATRIX_USER_ID == "@bot:example.org"
         assert loaded.MATRIX_ENCRYPTION is False
         assert loaded.matrix_allowed_users == {"@me:example.org"}
+
+
+def test_save_unsets_cleared_keys():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                         MATRIX_ALLOWED_USERS="@me:example.org", MATRIX_HOME_ROOM="!r:example.org")
+        c.save(path)
+        c.MATRIX_USER_ID = None
+        c.MATRIX_ACCESS_TOKEN = None
+        c.MATRIX_HOME_ROOM = None
+        c.save(path)
+        loaded = AureonConfig.from_file(path)
+        assert loaded.MATRIX_USER_ID is None
+        assert loaded.MATRIX_ACCESS_TOKEN is None
+        assert loaded.MATRIX_HOME_ROOM is None
+        assert not loaded.matrix_configured

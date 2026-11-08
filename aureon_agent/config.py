@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from typing import List, Optional
-from dotenv import dotenv_values, set_key
+from dotenv import dotenv_values, set_key, unset_key
 
 _DEFAULT_MATRIX_HOMESERVER = "https://matrix.auxois-wyrm.ts.net"
 
@@ -120,12 +120,14 @@ class AureonConfig:
             with open(path, "w") as f:
                 f.write("")
         os.chmod(path, 0o600)
+        existing = dotenv_values(path)
         for key, value in self.__dict__.items():
             if value is not None:
                 set_key(path, key, str(value))
-            else:
-                # Remove key if none
-                pass
+            elif key in existing:
+                # Cleared in this config (e.g. a channel disabled in setup):
+                # unset it so the old value doesn't silently stay active.
+                unset_key(path, key)
 
     def validate(self) -> List[str]:
         errors = []

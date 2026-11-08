@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from channels.router import BUTTON_HINT
+
 logger = logging.getLogger(__name__)
 
 async def confirm_with_captain(context: dict, prompt_text: str, timeout: int = 60) -> bool:
@@ -20,7 +22,7 @@ async def confirm_with_captain(context: dict, prompt_text: str, timeout: int = 6
         # Ask via inline keyboard (Yes/No buttons) — not a typed "yes" prompt,
         # which loops on headless boxes. Falls back to typed yes via the
         # pending_confirmations future resolved in router.handle_message.
-        full_prompt = f"⚠️ **Confirmation Required**\n{prompt_text}\n\nTap ✅ Yes to proceed, or ❌ No to deny."
+        full_prompt = f"⚠️ **Confirmation Required**\n{prompt_text}\n\n{BUTTON_HINT}"
         confirm_data = "confirm_yes"
         cancel_data = "confirm_no"
 
