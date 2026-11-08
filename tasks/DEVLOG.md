@@ -31,7 +31,8 @@
 **Security note:** httpx INFO logging prints the full Telegram bot URL (token) into the journal. Not changed here; consider `logging.getLogger("httpx").setLevel(WARNING)` and rotating the token.
 
 **Review (PR #27, /code-review high):** 9 findings; fixed reaction-target check, edit size cap + fallback, stray placeholder on typed replies, `!new` TTL + `/path` fallthrough, reconnect supervisor, exact button-hint strip, `config.save` unsetting cleared keys, concurrent+cancelled MCP connect, 0600 DB sidecars. Tests 209 -> 220.
-**Known follow-ups (not fixed):** pickle key defaults to a repo constant (override via `MATRIX_PICKLE_KEY`; changing it on an existing store needs a store reset); Matrix env parsing duplicated across cli/status/config/matrix (consolidate on `AureonConfig`); httpx INFO logs leak the Telegram token.
+**Review round 2 (10 findings):** fixed byte-size splitting, cron fan-out isolation, fail-closed `MATRIX_ENCRYPTION`, `!new` swallowing input, lazy cron default needing a home room, MCP startup (sequential in-task + cancel cleanup), config/commands consolidation, per-install pickle key. Rejected as false positive: "handlers block the sync loop" — mautrix handlers registered with default `wait_sync=False` run via `background_task`, so replies/reactions can arrive while the agent awaits a confirmation. Tests 220 -> 230.
+**Known follow-ups (not fixed):** the existing store (created 2026-11-08 before per-install keys) still uses the default pickle key — it can't be re-keyed in place; doctor shows 🟡. Hardening = reset `data/matrix_crypto.db*` + new bot device (needs a fresh login), or set `MATRIX_PICKLE_KEY` on a new store. `_run_cli` subprocess runner still duplicated with telegram.py. httpx INFO logs leak the Telegram token.
 
 **State:** branch `feat/matrix-channel`, PR #27 open against `dev`.
 
