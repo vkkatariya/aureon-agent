@@ -238,6 +238,29 @@ async def main():
 
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
 
+    # Matrix is the default channel: registered first so it leads the channel list.
+    matrix_user = os.getenv("MATRIX_USER_ID")
+    matrix_token = os.getenv("MATRIX_ACCESS_TOKEN")
+    matrix_home_room = os.getenv("MATRIX_HOME_ROOM", "")
+    if matrix_user and matrix_token:
+        from channels.matrix import MatrixChannel, parse_allowed_users
+        allowed_users = parse_allowed_users(os.getenv("MATRIX_ALLOWED_USERS", ""))
+        if not allowed_users:
+            logger.warning("MATRIX_ALLOWED_USERS is empty — all Matrix messages will be dropped")
+        router.register("matrix", MatrixChannel(
+            homeserver=os.getenv("MATRIX_HOMESERVER", "https://matrix.auxois-wyrm.ts.net"),
+            user_id=matrix_user,
+            access_token=matrix_token,
+            router=router,
+            allowed_users=allowed_users,
+            device_id=os.getenv("MATRIX_DEVICE_ID", "AUREON_ARM64"),
+            home_room=matrix_home_room or None,
+            encryption=os.getenv("MATRIX_ENCRYPTION", "true").strip().lower() in ("1", "true", "yes", "on"),
+            data_dir=DATA_DIR,
+        ))
+    else:
+        logger.info("MATRIX_USER_ID/MATRIX_ACCESS_TOKEN not set, Matrix channel disabled")
+
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:
         allowed_chats = {c.strip() for c in os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",") if c.strip()}
@@ -271,6 +294,7 @@ async def main():
         channel_router=router,
         workspace_dir=WORKSPACE_DIR,
         default_chat_id=os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",")[0].strip(),
+        matrix_home_room=matrix_home_room,
     )
     await cron.start()
     logger.info("cron scheduler started")
