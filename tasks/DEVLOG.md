@@ -2,6 +2,17 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-09 · Claude Code (local) · fix(logging): httpx token leak + shared run_cli (branch `fix/httpx-token-log-dedupe-cli`)
+
+**Mode:** Builder
+
+**Did:** Matrix follow-ups. (1) `httpx`/`httpcore` loggers set to WARNING in `aureon_agent/cli.py` (INFO logged full URLs incl. Telegram bot token). (2) CLI runner deduped into `channels.commands.run_cli`, used by telegram.py and matrix.py. (3) Matrix bot re-identified: old `@aureon-agent` password unrecoverable and admin reset gave no reply, so registered `@aureon-bot` (display name "aureon-agent"), new room, new device, fresh random pickle key (`data/matrix_pickle.key`); old store deleted, old token logged out, registration re-locked.
+
+**Verified:** `pytest` 237 passed, ruff clean. Bot replies, `!help` works (Captain confirmed).
+
+**Needs Captain:** rotate the Telegram bot token via BotFather (already present in past journal lines; code change only stops new leaks). Optionally have an admin deactivate old `@aureon-agent`.
+
+---
 ## 2026-11-08 · Claude Code (local) · feat(channel): Matrix channel as default (branch `feat/matrix-channel`)
 
 **Mode:** Builder
