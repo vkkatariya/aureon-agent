@@ -400,4 +400,4 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 - [x] Sub-task 7: Add Matrix health checks to `doctor.py` and Matrix status to `status.py`.
 - [x] Sub-task 8: Support `/handoff matrix:<room_id>` in `repl.py` and Matrix setup in `setup.py`.
 - [x] Sub-task 9: Test suite in `tests/test_matrix_channel.py`, `tests/test_config.py`, `tests/test_doctor.py`, `tests/test_cron.py`.
-- [x] Sub-task 10: Live verification on athena — create `@aureon-agent` account, set `MATRIX_*` in `.env`, run `aureon-agent doctor`, DM from Element, check `!status`/`!help` and E2EE. Done: doctor ✅, service channels matrix+telegram, E2EE DM reply, `!help`/`!status` confirmed by Captain.
+- [x] Sub-task 10: Live verification on athena — create `@aureon-agent` account, set `MATRIX_*` in `.env`, run `aureon-agent doctor`, DM from Element, check `!status`/`!help` and E2EE. Evidenced: doctor ✅, service channels matrix+telegram, E2EE DM reply, `!help` handled (journal). Captain said commands work; `!status` not in journal, streaming/code-block rendering not explicitly confirmed.
