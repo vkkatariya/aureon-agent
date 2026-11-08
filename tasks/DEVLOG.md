@@ -6,9 +6,9 @@
 
 **Mode:** Builder
 
-**Did:** Matrix follow-ups. (1) `httpx`/`httpcore` loggers set to WARNING in `aureon_agent/cli.py` (INFO logged full URLs incl. Telegram bot token). (2) CLI runner deduped into `channels.commands.run_cli`, used by telegram.py and matrix.py. (3) Matrix bot re-identified: old `@aureon-agent` password unrecoverable and admin reset gave no reply, so registered `@aureon-bot` (display name "aureon-agent"), new room, new device, fresh random pickle key (`data/matrix_pickle.key`); old store deleted, old token logged out, registration re-locked.
+**Did:** Matrix follow-ups. (1) Token redaction filter on all root log handlers (`aureon_agent/logsafe.py`, regex `bot<id>:<secret>`) plus `httpx`/`httpcore` at WARNING, installed from `aureon_agent/cli.py` (INFO logged full URLs incl. Telegram bot token). Review round 1: redaction instead of single-logger silencing, Matrix error text no longer cites a `!` prefix for `/` commands, CLI timeout no longer leaks interpreter path, non-zero exit noted. Not changed by design: LOG_LEVEL does not override httpx quieting; run_cli stays in commands.py. (2) CLI runner deduped into `channels.commands.run_cli`, used by telegram.py and matrix.py. (3) Matrix bot re-identified: old `@aureon-agent` password unrecoverable and admin reset gave no reply, so registered `@aureon-bot` (display name "aureon-agent"), new room, new device, fresh random pickle key (`data/matrix_pickle.key`); old store deleted, old token logged out, registration re-locked.
 
-**Verified:** `pytest` 237 passed, ruff clean. Bot replies, `!help` works (Captain confirmed).
+**Verified:** `pytest` 238 passed, ruff clean. Bot replies, `!help` works (Captain confirmed).
 
 **Needs Captain:** rotate the Telegram bot token via BotFather (already present in past journal lines; code change only stops new leaks). Optionally have an admin deactivate old `@aureon-agent`.
 

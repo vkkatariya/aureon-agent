@@ -633,7 +633,7 @@ class MatrixChannel(Channel):
             return
 
         await self.send_action(room_id, "typing")
-        out = await run_cli(cmd, cli_args, "!")
+        out = await run_cli(cmd, cli_args, "")
         await self._stop_typing(room_id)
         for chunk in chunk_text(out, MATRIX_MAX_LEN - 1000):
             await self.send_message(room_id, chunk, code=True)

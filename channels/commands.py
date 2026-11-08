@@ -25,6 +25,10 @@ async def run_cli(cmd: str, cli_args: list, prefix: str = "/") -> str:
             capture_output=True, text=True, timeout=60,
         )
         out = (proc.stdout or proc.stderr or "").strip()
+        if proc.returncode and (proc.stdout or "").strip():
+            out += f"\n(exit {proc.returncode})"
+    except subprocess.TimeoutExpired:
+        out = f"Error running {prefix}{cmd}: timed out after 60s"
     except Exception as e:
         out = f"Error running {prefix}{cmd}: {e}"
     return out or f"({prefix}{cmd} produced no output)"
