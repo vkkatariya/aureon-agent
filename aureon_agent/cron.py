@@ -207,7 +207,11 @@ class CronScheduler:
                     target = self._target_for(channel_name, job)
                     if not target:
                         continue
-                    await self.router.send_message(f"{channel_name}:{target}", text)
+                    try:
+                        await self.router.send_message(f"{channel_name}:{target}", text)
+                    except Exception as e:  # one down channel must not starve the rest
+                        logger.error("cron: delivery to %s failed for job %s: %s",
+                                     channel_name, job["id"], e)
             elif deliver == "matrix":
                 room = self._target_for("matrix", job)
                 if not room:

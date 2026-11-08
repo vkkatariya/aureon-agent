@@ -6,6 +6,7 @@ handles the full lifecycle: connect → list_tools → call_tool → disconnect.
 Tool schemas are translated from MCP format (inputSchema) to OpenAI function
 format (parameters) so they merge seamlessly with skill_loader tools.
 """
+import asyncio
 import json
 import logging
 import os
@@ -93,6 +94,15 @@ class MCPClient:
             init_result = await self._session.initialize()
             logger.info("MCP server '%s' connected: %s",
                         self.server_name, init_result.server_info if hasattr(init_result, 'server_info') else 'ok')
+        except asyncio.CancelledError:
+            # Timed out / cancelled mid-handshake: reap the spawned server.
+            if self._exit_stack:
+                try:
+                    await asyncio.shield(self._exit_stack.aclose())
+                except BaseException:  # noqa: BLE001
+                    pass
+                self._exit_stack = None
+            raise
         except FileNotFoundError:
             raise MCPConfigError(
                 f"MCP server binary not found: {self.command!r}. "

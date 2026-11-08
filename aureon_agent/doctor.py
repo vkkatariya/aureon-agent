@@ -160,8 +160,12 @@ def check_matrix() -> Tuple[str, str]:
     bad = [u for u in allowed if not _MXID_RE.match(u)]
     if bad:
         return "❌", f"Invalid MXID in MATRIX_ALLOWED_USERS: {', '.join(sorted(bad))}"
-    if config.MATRIX_ENCRYPTION and not os.path.exists(os.path.join(DATA_DIR, "matrix_crypto.db")):
-        return "🟡", f"{who} authenticated; crypto store not yet created (created on first start)"
+    if config.MATRIX_ENCRYPTION:
+        if not os.path.exists(os.path.join(DATA_DIR, "matrix_crypto.db")):
+            return "🟡", f"{who} authenticated; crypto store not yet created (created on first start)"
+        if not (os.getenv("MATRIX_PICKLE_KEY")
+                or os.path.exists(os.path.join(DATA_DIR, "matrix_pickle.key"))):
+            return "🟡", f"{who} OK, but crypto store uses the legacy default pickle key (see PR notes)"
     return "✅", f"{who} @ {base}"
 
 

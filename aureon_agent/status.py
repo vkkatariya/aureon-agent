@@ -199,10 +199,12 @@ def gather_status(data_dir: str = DATA_DIR) -> dict:
 
     active = _service_active()
 
-    matrix_user = os.getenv("MATRIX_USER_ID")
-    matrix_on = bool(matrix_user and os.getenv("MATRIX_ACCESS_TOKEN"))
-    matrix_allowed = [u.strip() for u in os.getenv("MATRIX_ALLOWED_USERS", "").split(",") if u.strip()]
-    encryption = os.getenv("MATRIX_ENCRYPTION", "true").strip().lower() in ("1", "true", "yes", "on")
+    from aureon_agent.config import AureonConfig
+    mcfg = AureonConfig.from_env()
+    matrix_user = mcfg.MATRIX_USER_ID
+    matrix_on = mcfg.matrix_configured
+    matrix_allowed = sorted(mcfg.matrix_allowed_users)
+    encryption = mcfg.MATRIX_ENCRYPTION
     if not matrix_on:
         matrix_crypto = "n/a"
     elif not encryption:
@@ -249,7 +251,7 @@ def gather_status(data_dir: str = DATA_DIR) -> dict:
         "mcp": mcp_details,
         # F. matrix channel
         "matrix": "configured" if matrix_on else "not configured",
-        "matrix_homeserver": os.getenv("MATRIX_HOMESERVER", "https://matrix.auxois-wyrm.ts.net") if matrix_on else "—",
+        "matrix_homeserver": mcfg.MATRIX_HOMESERVER if matrix_on else "—",
         "matrix_user": matrix_user if matrix_on else "—",
         "matrix_allowed": ", ".join(matrix_allowed) if matrix_allowed else "none",
         "matrix_crypto": matrix_crypto,

@@ -3,6 +3,7 @@
 Wired into __main__.py as `aureon-agent cron <subcommand>`.
 """
 import asyncio
+import logging
 import os
 import time
 
@@ -41,16 +42,17 @@ def _format_ts(ts: float | None) -> str:
 
 
 def _default_deliver() -> str:
-    """'matrix' when Matrix credentials are present (env or .env), else 'telegram'."""
-    if os.getenv("MATRIX_USER_ID") and os.getenv("MATRIX_ACCESS_TOKEN"):
-        return "matrix"
+    """'matrix' when Matrix is configured WITH a home room (otherwise matrix
+    jobs would have nowhere to deliver), else 'telegram'."""
     try:
         from aureon_agent.config import AureonConfig
-        env_path = os.path.join(BASE_DIR, ".env")
-        if AureonConfig.from_file(env_path).matrix_configured:
+        cfg = AureonConfig.from_env()
+        if not cfg.matrix_configured:
+            cfg = AureonConfig.from_file(os.path.join(BASE_DIR, ".env"))
+        if cfg.matrix_configured and cfg.MATRIX_HOME_ROOM:
             return "matrix"
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).debug("default deliver lookup failed: %s", e)
     return "telegram"
 
 
@@ -137,6 +139,7 @@ async def _cmd_list(args):
 
 
 async def _cmd_create(args):
+    deliver = args.deliver or _default_deliver()
     from dotenv import load_dotenv
     load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
@@ -153,7 +156,7 @@ async def _cmd_create(args):
 
     # Default chat_id from env
     chat_id = args.chat_id
-    if not chat_id and args.deliver != "matrix":
+    if not chat_id and deliver != "matrix":
         # Matrix jobs resolve to MATRIX_HOME_ROOM at delivery time; a Telegram
         # chat ID would be meaningless there.
         chat_id = os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",")[0].strip() or None
@@ -166,7 +169,7 @@ async def _cmd_create(args):
             schedule_type=schedule_type,
             prompt=args.prompt,
             skills=skills,
-            deliver=args.deliver,
+            deliver=deliver,
             chat_id=chat_id,
             model=args.model,
             timeout_sec=args.timeout_sec,
@@ -348,10 +351,10 @@ def register_cron_subparser(subparsers):
     p_create.add_argument("--name", required=True, help="Job name")
     p_create.add_argument("--prompt", required=True, help="Self-contained task instruction")
     p_create.add_argument("--skills", default="", help="Comma-separated skill names")
-    default_deliver = _default_deliver()
-    p_create.add_argument("--deliver", default=default_deliver,
+    p_create.add_argument("--deliver", default=None,
                           choices=["matrix", "telegram", "discord", "local", "all"],
-                          help=f"Delivery channel (default: {default_deliver})")
+                          help="Delivery channel (default: matrix if configured with "
+                               "MATRIX_HOME_ROOM, else telegram)")
     p_create.add_argument("--chat-id", default=None, help="Chat ID for delivery")
     p_create.add_argument("--model", default=None, help="Model override")
     p_create.add_argument("--timeout-sec", type=int, default=300, help="Per-run timeout (default: 300)")

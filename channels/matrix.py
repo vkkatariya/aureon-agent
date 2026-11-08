@@ -11,8 +11,10 @@ room. Everything else is dropped silently.
 """
 import asyncio
 import html
+import json
 import logging
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -24,7 +26,7 @@ from mautrix.types import EventType, Membership, UserID
 
 from channels.base import Channel
 from channels.router import BUTTON_HINT
-from channels.telegram import SLASH_COMMANDS
+from channels.commands import SLASH_COMMANDS
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,8 @@ TYPING_TIMEOUT_MS = 10000
 COMMAND_PREFIXES = ("!", "/")
 CONFIRM_REACTIONS = {"✅": "yes", "👍": "yes", "❌": "no", "👎": "no"}
 YES_WORDS = {"yes", "y", "confirm"}
+NO_WORDS = {"no", "n", "cancel"}
+MAX_EVENT_BYTES = 40000   # pre-encryption JSON budget; Megolm base64 adds ~33% (cap is 65536)
 KNOWN_COMMANDS = set(SLASH_COMMANDS) | {"help", "new", "lesson"}
 
 HELP_COMMANDS = [
@@ -86,6 +90,26 @@ def chunk_text(text: str, limit: int = MATRIX_MAX_LEN) -> list:
     return chunks
 
 
+def event_size(content: dict) -> int:
+    """Worst-case wire size: json.dumps escapes non-ASCII to 6-12 bytes per char."""
+    return len(json.dumps(content).encode())
+
+
+def split_to_fit(text: str, render, budget: int = MAX_EVENT_BYTES) -> list:
+    """Split `text` (at newlines where possible) until every rendered event
+    fits `budget` bytes. Returns [(piece, content), ...]. Character counts
+    alone are not enough: non-ASCII text and HTML escaping both inflate size."""
+    content = render(text)
+    if event_size(content) <= budget or len(text) <= 1:
+        return [(text, content)]
+    mid = len(text) // 2
+    cut = text.rfind("\n", 0, mid)
+    if cut <= 0:
+        cut = mid
+    return (split_to_fit(text[:cut], render, budget)
+            + split_to_fit(text[cut:].lstrip("\n") or text[cut:], render, budget))
+
+
 def parse_command(text: str):
     """Return (cmd, args) when text starts with `!` or `/`, else None.
     `!status` and `/status` parse identically."""
@@ -117,7 +141,7 @@ class MatrixChannel(Channel):
         self.encryption = encryption
         self.router = router
         self.data_dir = data_dir
-        self.pickle_key = pickle_key or os.getenv("MATRIX_PICKLE_KEY") or DEFAULT_PICKLE_KEY
+        self.pickle_key = pickle_key or os.getenv("MATRIX_PICKLE_KEY")  # else resolved per install
 
         self.client = None
         self._crypto_db = None
@@ -129,6 +153,7 @@ class MatrixChannel(Channel):
         self._sync_task = None
         self._supervisor = None
         self._stopping = False
+        self._store_has_account = False
         self._started_ms = 0
         self._drop_old_events = False
 
@@ -176,6 +201,8 @@ class MatrixChannel(Channel):
             os.makedirs(self.data_dir, exist_ok=True)
             db_path = os.path.join(self.data_dir, "matrix_crypto.db")
             url = f"sqlite:{db_path}"
+            # Must be decided before Database.start() creates the file.
+            self._store_has_account = os.path.exists(db_path) and os.path.getsize(db_path) > 0
             self._crypto_db = Database.create(url, upgrade_table=PgCryptoStore.upgrade_table)
             self._state_db = Database.create(url, upgrade_table=PgStateStore.upgrade_table)
             old_umask = os.umask(0o077)  # DB + -wal/-shm are created owner-only
@@ -190,7 +217,9 @@ class MatrixChannel(Channel):
                 except OSError:
                     pass
             crypto_store = PgCryptoStore(
-                account_id=self.user_id, pickle_key=self.pickle_key, db=self._crypto_db,
+                account_id=self.user_id,
+                pickle_key=self.pickle_key or self._load_or_create_pickle_key(db_path),
+                db=self._crypto_db,
             )
             state_store = PgStateStore(self._state_db)
             sync_store = crypto_store
@@ -236,6 +265,26 @@ class MatrixChannel(Channel):
         self._sync_task = asyncio.ensure_future(self.client.start(None))
         logger.info("matrix: started as %s (device %s, e2ee=%s, %d allowed user(s))",
                     self.user_id, self.device_id, self.encryption, len(self.allowed_users))
+
+    def _load_or_create_pickle_key(self, db_path):
+        """Per-install random pickle key in data/matrix_pickle.key (0600). A store
+        that predates this keeps the legacy default (flagged by doctor) because
+        its pickles can't be re-keyed in place."""
+        key_path = os.path.join(self.data_dir, "matrix_pickle.key")
+        if os.path.exists(key_path):
+            with open(key_path) as f:
+                return f.read().strip()
+        # NB: the DB files are created before this runs (Database.start), so check
+        # for an existing *account*, not mere file presence.
+        if self._store_has_account:
+            logger.warning("matrix: crypto store uses the legacy default pickle key; "
+                           "set MATRIX_PICKLE_KEY or reset data/matrix_crypto.db* to harden it")
+            return DEFAULT_PICKLE_KEY
+        key = secrets.token_hex(32)
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(key)
+        return key
 
     async def _upload_device_keys(self):
         """Best-effort device/one-time key upload. Cross-signing is deliberately
@@ -298,30 +347,41 @@ class MatrixChannel(Channel):
             "formatted_body": html_body if html_body is not None else md_to_html(text),
         }
 
-    async def send_message(self, chat_id, text, html_body=None, **_ignored):
-        """Send text (Markdown rendered to HTML). Splits above MATRIX_MAX_LEN.
-        Returns the event_id of the first chunk."""
+    async def send_message(self, chat_id, text, code=False, **_ignored):
+        """Send text (Markdown rendered to HTML, or a <pre><code> block when
+        code=True). Splits by character count and again by encoded event size.
+        Returns the event_id of the first piece."""
+        client = self.client
+        if client is None:
+            raise RuntimeError("matrix client not connected")
+        render = ((lambda t: self._content(t, code_block_html(t))) if code
+                  else (lambda t: self._content(t)))
         first = None
         for chunk in chunk_text(text or ""):
-            eid = await self.client.send_message_event(
-                chat_id, EventType.ROOM_MESSAGE,
-                self._content(chunk, html_body if first is None and html_body else None),
-            )
-            if first is None:
-                first = eid
+            for _piece, content in split_to_fit(chunk, render):
+                eid = await client.send_message_event(chat_id, EventType.ROOM_MESSAGE, content)
+                if first is None:
+                    first = eid
         return first
 
     async def edit_message(self, chat_id, message_id, text):
         text = (text or "…")[:MATRIX_EDIT_MAX_LEN]
-        new_content = self._content(text)
-        content = {
-            "msgtype": "m.text",
-            "body": f"* {text}",
-            "format": "org.matrix.custom.html",
-            "formatted_body": f"* {new_content['formatted_body']}",
-            "m.new_content": new_content,
-            "m.relates_to": {"rel_type": "m.replace", "event_id": message_id},
-        }
+
+        def build(t):
+            new_content = self._content(t)
+            return {
+                "msgtype": "m.text",
+                "body": f"* {t}",
+                "format": "org.matrix.custom.html",
+                "formatted_body": f"* {new_content['formatted_body']}",
+                "m.new_content": new_content,
+                "m.relates_to": {"rel_type": "m.replace", "event_id": message_id},
+            }
+
+        content = build(text)
+        while event_size(content) > MAX_EVENT_BYTES and len(text) > 1:
+            text = text[: len(text) * 3 // 4]   # edits carry 4 copies; shrink to fit
+            content = build(text)
         try:
             await self.client.send_message_event(chat_id, EventType.ROOM_MESSAGE, content)
             return True
@@ -444,8 +504,11 @@ class MatrixChannel(Channel):
 
         expiry = self._pending_new.pop(room_id, None)
         if expiry is not None and time.monotonic() < expiry:
-            await self._finish_new(room_id, text)
-            return
+            answer = text.strip().lower()
+            if answer in YES_WORDS or answer in NO_WORDS:
+                await self._finish_new(room_id, answer in YES_WORDS)
+                return
+            # Anything else abandons the !new prompt and is handled normally.
 
         parsed = parse_command(text)
         if parsed is not None:
@@ -552,7 +615,7 @@ class MatrixChannel(Channel):
         out = await self._run_cli(cmd, cli_args)
         await self._stop_typing(room_id)
         for chunk in chunk_text(out, MATRIX_MAX_LEN - 1000):
-            await self.send_message(room_id, chunk, html_body=code_block_html(chunk))
+            await self.send_message(room_id, chunk, code=True)
 
     @staticmethod
     async def _run_cli(cmd, cli_args) -> str:
@@ -567,8 +630,8 @@ class MatrixChannel(Channel):
             out = f"Error running !{cmd}: {e}"
         return out or f"(!{cmd} produced no output)"
 
-    async def _finish_new(self, room_id, reply):
-        if reply.strip().lower() not in YES_WORDS:
+    async def _finish_new(self, room_id, confirmed):
+        if not confirmed:
             await self.send_message(room_id, "Kept current history.")
             return
         cleared = await self.router.sessions.clear_session(f"matrix:{room_id}")

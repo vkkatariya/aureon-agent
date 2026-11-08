@@ -147,3 +147,13 @@ def test_save_unsets_cleared_keys():
         assert loaded.MATRIX_ACCESS_TOKEN is None
         assert loaded.MATRIX_HOME_ROOM is None
         assert not loaded.matrix_configured
+
+
+def test_parse_bool_fails_closed_for_encryption(monkeypatch):
+    from aureon_agent.config import parse_bool
+    for raw in ("", "enable", "typo", None):
+        assert parse_bool(raw, True) is True
+    for raw in ("false", "0", "no", "off", "n", "disabled"):
+        assert parse_bool(raw, True) is False
+    monkeypatch.setenv("MATRIX_ENCRYPTION", "enable")
+    assert AureonConfig.from_env().MATRIX_ENCRYPTION is True

@@ -675,3 +675,22 @@ class TestMatrixDelivery(unittest.TestCase):
         asyncio.run(sched._deliver(self._job(deliver="telegram", chat_id=None),
                                    "success", "out", None, 1.0))
         assert router.send_message.await_args.args[0] == "telegram:723865496"
+
+
+class TestMatrixDeliveryIsolation(unittest.TestCase):
+    def test_all_continues_after_a_channel_fails(self):
+        from aureon_agent.cron import CronScheduler
+        router = MagicMock()
+        router.channels = {"matrix": object(), "telegram": object()}
+
+        async def send(key, text):
+            if key.startswith("matrix:"):
+                raise AttributeError("client is None")
+            send.sent.append(key)
+        send.sent = []
+        router.send_message = send
+        sched = CronScheduler("x.db", MagicMock(), router, ".", default_chat_id="42",
+                              matrix_home_room="!home:example.org")
+        job = {"id": "j", "name": "n", "deliver": "all", "chat_id": None}
+        asyncio.run(sched._deliver(job, "success", "out", None, 1.0))
+        assert send.sent == ["telegram:42"]

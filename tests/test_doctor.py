@@ -85,4 +85,8 @@ def test_check_matrix_crypto_store_warning(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor, "DATA_DIR", str(tmp_path))
     assert doctor.check_matrix()[0] == "🟡"
     (tmp_path / "matrix_crypto.db").write_text("")
+    monkeypatch.delenv("MATRIX_PICKLE_KEY", raising=False)
+    status, details = doctor.check_matrix()
+    assert status == "🟡" and "legacy" in details       # store without a per-install key
+    (tmp_path / "matrix_pickle.key").write_text("k")
     assert doctor.check_matrix()[0] == "✅"

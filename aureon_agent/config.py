@@ -6,10 +6,16 @@ from dotenv import dotenv_values, set_key, unset_key
 _DEFAULT_MATRIX_HOMESERVER = "https://matrix.auxois-wyrm.ts.net"
 
 
-def _parse_bool(value, default: bool) -> bool:
-    if value is None or str(value).strip() == "":
-        return default
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
+def parse_bool(value, default: bool) -> bool:
+    """Parse a boolean env value. Empty/unrecognised values return `default`,
+    so a flag whose default is the safe setting (e.g. MATRIX_ENCRYPTION=True)
+    can't be switched off by a typo."""
+    v = "" if value is None else str(value).strip().lower()
+    if v in ("1", "true", "yes", "on", "y", "enabled"):
+        return True
+    if v in ("0", "false", "no", "off", "n", "disabled"):
+        return False
+    return default
 
 
 @dataclass
@@ -77,7 +83,7 @@ class AureonConfig:
             MATRIX_DEVICE_ID=os.getenv("MATRIX_DEVICE_ID") or "AUREON_ARM64",
             MATRIX_ALLOWED_USERS=os.getenv("MATRIX_ALLOWED_USERS", ""),
             MATRIX_HOME_ROOM=os.getenv("MATRIX_HOME_ROOM"),
-            MATRIX_ENCRYPTION=_parse_bool(os.getenv("MATRIX_ENCRYPTION"), True),
+            MATRIX_ENCRYPTION=parse_bool(os.getenv("MATRIX_ENCRYPTION"), True),
             HEALTH_PORT=os.getenv("HEALTH_PORT", "7777"),
             LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
         )
@@ -109,7 +115,7 @@ class AureonConfig:
             MATRIX_DEVICE_ID=values.get("MATRIX_DEVICE_ID") or "AUREON_ARM64",
             MATRIX_ALLOWED_USERS=values.get("MATRIX_ALLOWED_USERS") or "",
             MATRIX_HOME_ROOM=values.get("MATRIX_HOME_ROOM"),
-            MATRIX_ENCRYPTION=_parse_bool(values.get("MATRIX_ENCRYPTION"), True),
+            MATRIX_ENCRYPTION=parse_bool(values.get("MATRIX_ENCRYPTION"), True),
             HEALTH_PORT=values.get("HEALTH_PORT", "7777"),
             LOG_LEVEL=values.get("LOG_LEVEL", "INFO"),
         )

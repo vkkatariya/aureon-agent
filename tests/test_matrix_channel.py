@@ -210,7 +210,7 @@ def test_new_requires_typed_confirmation_then_clears():
 def test_new_cancelled_by_other_reply():
     ch = make()
     run(ch._on_message(msg(body="/new")))
-    run(ch._on_message(msg(body="nope")))
+    run(ch._on_message(msg(body="no")))
     assert ch.router.sessions.cleared == []
     assert "Kept" in sent_bodies(ch)[-1]
     assert ch.router.calls == []
@@ -433,3 +433,72 @@ def test_supervisor_retries_after_connect_failure(monkeypatch):
         await ch.stop()
         return len(attempts)
     assert run(go()) >= 3
+
+
+# ── round-2 review fixes ──────────────────────────────────────────────────
+
+def test_other_message_after_new_is_processed_not_swallowed():
+    ch = make()
+    run(ch._on_message(msg(body="!new")))
+    run(ch._on_message(msg(body="!status-ish question")))   # '!' unknown cmd -> handled, not swallowed
+    assert ch.router.sessions.cleared == []
+    assert "Unknown command" in sent_bodies(ch)[-1]
+    ch2 = make()
+    run(ch2._on_message(msg(body="!new")))
+    run(ch2._on_message(msg(body="what time is it")))
+    assert ch2.router.calls == [("matrix", ROOM, "what time is it")]
+
+
+def test_non_ascii_message_split_to_fit_event_size():
+    ch = make()
+    text = "日本語🙂" * 6000                      # ~24K chars, huge when JSON-escaped
+    run(ch.send_message(ROOM, text))
+    assert len(ch.client.events) > 1
+    for _, _, content in ch.client.events:
+        assert mx.event_size(content) <= mx.MAX_EVENT_BYTES
+
+
+def test_html_escape_inflation_split_to_fit():
+    ch = make()
+    text = "<&>\n" * 3000
+    run(ch.send_message(ROOM, text, code=True))
+    for _, _, content in ch.client.events:
+        assert mx.event_size(content) <= mx.MAX_EVENT_BYTES
+        assert content["formatted_body"].startswith("<pre><code>")
+
+
+def test_edit_shrinks_to_fit():
+    ch = make()
+    run(ch.edit_message(ROOM, "$ev0", "日本語🙂" * 3000))
+    content = ch.client.events[0][2]
+    assert mx.event_size(content) <= mx.MAX_EVENT_BYTES
+
+
+def test_send_message_without_client_raises_cleanly():
+    ch = make()
+    ch.client = None
+    try:
+        run(ch.send_message(ROOM, "hi"))
+        raise AssertionError("expected RuntimeError")
+    except RuntimeError as e:
+        assert "not connected" in str(e)
+
+
+def test_pickle_key_generated_per_install(tmp_path):
+    ch = make(data_dir=str(tmp_path))
+    key = ch._load_or_create_pickle_key(str(tmp_path / "matrix_crypto.db"))
+    assert len(key) == 64 and key != mx.DEFAULT_PICKLE_KEY
+    assert (tmp_path / "matrix_pickle.key").stat().st_mode & 0o777 == 0o600
+    assert ch._load_or_create_pickle_key("x") == key        # stable across restarts
+
+
+def test_pickle_key_legacy_store_keeps_default(tmp_path):
+    ch = make(data_dir=str(tmp_path))
+    ch._store_has_account = True
+    assert ch._load_or_create_pickle_key("x") == mx.DEFAULT_PICKLE_KEY
+    assert not (tmp_path / "matrix_pickle.key").exists()
+
+
+def test_pickle_key_env_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("MATRIX_PICKLE_KEY", "from-env")
+    assert make(data_dir=str(tmp_path)).pickle_key == "from-env"

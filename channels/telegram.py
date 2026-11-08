@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
 from channels.base import Channel
+from channels.commands import SLASH_COMMANDS  # noqa: F401  (re-exported; tests import it from here)
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +30,6 @@ def _chunk_for_codeblock(text: str) -> list:
     text = text.strip()
     return [text[i:i + CODEBLOCK_CHUNK_LEN]
             for i in range(0, len(text), CODEBLOCK_CHUNK_LEN)] or [""]
-
-# Slash commands -> aureon-agent CLI subcommand (reuse 1:1, no logic duplication).
-# Nested subcommands (mcp/cron) handled specially below.
-SLASH_COMMANDS = {
-    "sessions": ["sessions"],
-    "doctor": ["doctor"],
-    "status": ["status"],
-    "version": ["version"],
-    "mcp": ["mcp", "list"],
-    "cron": ["cron", "list"],
-    "logs": ["logs"],
-    "skills": ["skills", "list"],
-}
 
 # /new confirmation inline-keyboard callback payloads (<= 64 bytes, no secrets).
 NEW_CONFIRM = "new_confirm"
