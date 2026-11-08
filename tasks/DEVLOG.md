@@ -2,6 +2,17 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-02 · Claude Code (local) · chore(ci): add DEVLOG check workflow
+
+**Mode:** Builder
+
+**Did:** added `.github/workflows/devlog.yml`, the `devlog` job from `workflow/agents_workflow/enforcement/ci-devlog-job.yml`. It fails a pull request that does not change `tasks/DEVLOG.md`. It is the backstop for `--no-verify` and cloud sessions.
+
+**Config change:** file `.github/workflows/devlog.yml` (new); old: none; new: workflow with `on: pull_request` and no branch or path filter; rollback: `git revert a5ec3eb`. It is a separate file because this repo's `ci.yml` filters `pull_request` by branch or path, so a job pasted there would be skipped on some pull requests. `ci.yml` is unchanged.
+
+**State:** branch `agent/claude-code-config-ci-devlog`, PR open against `dev`, not merged.
+
+## 2026-07-20 — TUI polished chrome (lighter Claude/Hermes style)
 ## 2026-11-07 — OpenRouter provider integration (branch `feat/openrouter-provider`)
 **Did:** Added support for OpenRouter base URL, model, and API key environment variables (`OPENROUTER_BASE_URL`, `OPENROUTER_MODEL`, `OPENROUTER_API_KEY`) across the configuration, runtime, and doctor checks, maintaining backward-compatible fallback to `OLLAMA_*`.
 
