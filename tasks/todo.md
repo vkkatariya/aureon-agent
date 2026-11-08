@@ -383,7 +383,7 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 
 - Doctor TUI gmail fix (read `GOOGLE_OAUTH_*`), cron name-resolution (`_resolve_job`), rich `/status` (PR #21), `/new` + `/skills` + `skills list` (PR #22), inline-keyboard confirmation (replaces typed-yes loop). See DEVLOG entries below.
 
-## Phase 11: Matrix Channel as Default (Hermes Parity) [ ]
+## Phase 11: Matrix Channel as Default (Hermes Parity) [~]
 
 **Goal:** Make self-hosted Matrix (Conduit on athena) the default communication channel for aureon-agent, matching Hermes Agent architecture.
 
@@ -391,13 +391,13 @@ Both backends expose tools to the LLM in the same tool-use format. LLM doesn't k
 **Branch:** `feat/matrix-channel`
 
 **Sub-tasks:**
-- [ ] Sub-task 1: Add `mautrix[encryption]>=0.21.0` to `requirements.txt` and `pyproject.toml`.
-- [ ] Sub-task 2: Update `aureon_agent/config.py` with `MATRIX_*` variables, validation, and token redaction.
-- [ ] Sub-task 3: Decouple `channels/router.py:send_confirmation()` from Telegram inline keyboards; support fallback text/reaction confirmations.
-- [ ] Sub-task 4: Implement `channels/matrix.py` (`MatrixChannel` implementing `Channel` ABC, auto-join invites from allowed users, streaming edit throttling, E2EE via `OlmMachine`, dual `!` and `/` command prefixes).
-- [ ] Sub-task 5: Wire `MatrixChannel` into `aureon_agent/cli.py:build_runtime()` as default primary channel.
-- [ ] Sub-task 6: Update `aureon_agent/cron.py` and `cron_cli.py` to support `--deliver matrix`.
-- [ ] Sub-task 7: Add Matrix health checks to `doctor.py` and Matrix status to `status.py`.
-- [ ] Sub-task 8: Support `/handoff matrix:<room_id>` in `repl.py` and Matrix setup in `setup.py`.
-- [ ] Sub-task 9: Test suite in `tests/test_matrix_channel.py`, `tests/test_config.py`, `tests/test_doctor.py`, `tests/test_cron.py`.
-
+- [x] Sub-task 1: Add `mautrix[encryption]>=0.21.0` to `requirements.txt` and `pyproject.toml`.
+- [x] Sub-task 2: Update `aureon_agent/config.py` with `MATRIX_*` variables, validation, and token redaction.
+- [x] Sub-task 3: Decouple `channels/router.py:send_confirmation()` from Telegram inline keyboards; support fallback text/reaction confirmations.
+- [x] Sub-task 4: Implement `channels/matrix.py` (`MatrixChannel` implementing `Channel` ABC, auto-join invites from allowed users, streaming edit throttling, E2EE via `OlmMachine`, dual `!` and `/` command prefixes).
+- [x] Sub-task 5: Wire `MatrixChannel` into `aureon_agent/cli.py:build_runtime()` as default primary channel.
+- [x] Sub-task 6: Update `aureon_agent/cron.py` and `cron_cli.py` to support `--deliver matrix`.
+- [x] Sub-task 7: Add Matrix health checks to `doctor.py` and Matrix status to `status.py`.
+- [x] Sub-task 8: Support `/handoff matrix:<room_id>` in `repl.py` and Matrix setup in `setup.py`.
+- [x] Sub-task 9: Test suite in `tests/test_matrix_channel.py`, `tests/test_config.py`, `tests/test_doctor.py`, `tests/test_cron.py`.
+- [x] Sub-task 10: Live verification on athena — create `@aureon-agent` account, set `MATRIX_*` in `.env`, run `aureon-agent doctor`, DM from Element, check `!status`/`!help` and E2EE. Evidenced: doctor ✅, service channels matrix+telegram, E2EE DM reply, `!help` handled (journal). Captain said commands work; `!status` not in journal, streaming/code-block rendering not explicitly confirmed.

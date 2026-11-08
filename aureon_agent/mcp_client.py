@@ -6,6 +6,7 @@ handles the full lifecycle: connect → list_tools → call_tool → disconnect.
 Tool schemas are translated from MCP format (inputSchema) to OpenAI function
 format (parameters) so they merge seamlessly with skill_loader tools.
 """
+import asyncio
 import json
 import logging
 import os
@@ -93,6 +94,15 @@ class MCPClient:
             init_result = await self._session.initialize()
             logger.info("MCP server '%s' connected: %s",
                         self.server_name, init_result.server_info if hasattr(init_result, 'server_info') else 'ok')
+        except asyncio.CancelledError:
+            # Timed out / cancelled mid-handshake: reap the spawned server.
+            if self._exit_stack:
+                try:
+                    await self._exit_stack.aclose()   # same task that entered the anyio scopes
+                except BaseException:  # noqa: BLE001
+                    pass
+                self._exit_stack = None
+            raise
         except FileNotFoundError:
             raise MCPConfigError(
                 f"MCP server binary not found: {self.command!r}. "
@@ -134,7 +144,9 @@ class MCPClient:
             prefixed_name = f"{self.prefix}_{self.server_name}_{tool.name}"
 
             # Translate MCP inputSchema → OpenAI parameters format
-            parameters = self._translate_schema(tool.inputSchema) if tool.inputSchema else {
+            # mcp>=2 renamed Tool.inputSchema -> input_schema; accept both.
+            raw_schema = getattr(tool, "input_schema", None) or getattr(tool, "inputSchema", None)
+            parameters = self._translate_schema(raw_schema) if raw_schema else {
                 "type": "object", "properties": {}
             }
 

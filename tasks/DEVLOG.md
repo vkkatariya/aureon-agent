@@ -2,6 +2,41 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-08 · Claude Code (local) · feat(channel): Matrix channel as default (branch `feat/matrix-channel`)
+
+**Mode:** Builder
+
+**Did:** implemented `tasks/kickoff-matrix-migration.md` sub-tasks 1–9 (code + tests). Live verification (sub-task 10) done later the same night, see "Live" below.
+
+**Built:**
+- `channels/matrix.py` (new): `MatrixChannel` on mautrix 0.21. MXID allowlist (silent drop), auto-join invites only from allowed users (others rejected), 1000-id event dedupe, `!`/`/` dual-prefix commands (status/doctor/sessions/version/mcp/cron/logs/skills/new/lesson/help, CLI output in `<pre><code>`), streaming via `m.replace` edits throttled 1/s, Markdown→HTML (raw HTML escaped), 15K-char chunking, typing indicator, ✅/❌ reaction + typed yes/no confirmations, `!new` needs typed `yes`. E2EE: SQLite crypto + state stores in `data/matrix_crypto.db`, `OlmMachine`, refuses a store from a different device_id.
+- `aureon_agent/config.py`: `MATRIX_*` fields, validation (allowlist required when creds set; Matrix alone satisfies channel requirement), token redaction.
+- `channels/router.py`: `send_confirmation` no longer imports telegram; channels with native `send_confirmation` (Telegram) use it, others get plain "reply yes/no" text.
+- `aureon_agent/cli.py`: Matrix registered first when configured; `cron.py`/`cron_cli.py`: `--deliver matrix` (default when Matrix configured), `MATRIX_HOME_ROOM` fallback, `all` fan-out now resolves a per-channel target (Telegram chat ID no longer sent to Matrix); `doctor.py` `check_matrix` (versions + whoami + MXID format + token owner + crypto store); `status.py` Channels section; `setup.py` Matrix step + non-interactive flags; `repl.py` handoff help (`matrix:<room_id>` already worked, session id split is on first colon).
+
+**Decisions / gotchas:**
+- Added `asyncpg>=0.28` and `markdown-it-py>=3.0` to `requirements.txt` beyond the spec: mautrix SQL stores hard-import `asyncpg` even for SQLite (verified offline with a probe), and the HTML renderer needs markdown-it. `pyproject.toml` reads deps from `requirements.txt` (dynamic), so no separate edit needed.
+- Cross-signing is deliberately not bootstrapped (Conduit 0.10 UIA 401, per spec); device shows unverified, Megolm still works.
+- Commands table is imported from `channels.telegram.SLASH_COMMANDS` (no duplication, but couples matrix.py to the telegram module import).
+- Events older than startup are dropped only when there is no persisted sync token (first run / E2EE off).
+
+**Verified:** `pytest tests/` 209 passed (was 160; +49 across test_matrix_channel, test_router, test_config, test_cron, test_doctor, test_setup). `ruff check .` clean. Homeserver `https://matrix.auxois-wyrm.ts.net/_matrix/client/versions` → 200. `aureon-agent doctor` shows "Matrix API 🟡 Not configured" as expected. Crypto store init probed offline. NOT verified: real sync, E2EE round-trip, Element rendering.
+**Pre-existing, unrelated:** `tests/smoke.py` fails on missing skill `openclaw-health` (same on clean `dev`); doctor MCP check ❌ gmail binary missing.
+
+**Next (Captain):** create `@aureon-agent:auxois-wyrm.ts.net` on Conduit, set `MATRIX_USER_ID`, `MATRIX_ACCESS_TOKEN`, `MATRIX_ALLOWED_USERS=@syntaxgrid:auxois-wyrm.ts.net` (+ optional `MATRIX_HOME_ROOM`) in `.env`, restart `aureon-agent.service`, run sub-task 10. Not merged to `dev`; awaiting review.
+
+**Live (2026-11-08 22:18):** Captain's one-shot `scripts/setup-matrix-bot.sh` (never committed; removed after use, Conduit `allow_registration` verified back to `false`) registered `@aureon-agent` and filled `.env`. `doctor` → Matrix API ✅. `aureon-agent.service` restarted: `channels: matrix, telegram`, E2EE store created, Matrix sync running. Element verification 2026-11-08 ~22:24, evidence as recorded: journal + sessions.db show a decrypted inbound `Hello` from `@syntaxgrid` and the agent reply (E2EE both ways); journal shows `cmd=help` handled at 22:23:34 with no errors; Captain wrote "both works, bot replied and commands work". Captain re-confirmed at 22:25 ("both works, bot replied and commands work") when asked about streaming and formatting specifically; accepted as sign-off. Not independently evidenced by logs: `!status` has no journal entry (resting on Captain's word only), and streaming behaviour ("…" → text edits) and code-block rendering in Element were not explicitly confirmed — the edit/HTML paths are covered by unit tests only.
+
+**Pre-existing bug found + fixed on this branch:** installed `mcp` 2.3.0 renamed `Tool.inputSchema` → `input_schema`; `AttributeError` in `MCPClient._discover_tools` aborted `build_runtime`, leaving the service "active" but with NO channels (aiosqlite threads keep the process alive) — same on the 15:25 boot, so Telegram was likely down for hours. Fix: accept both attr names; `build_runtime` now waits on each MCP server with `MCP_CONNECT_TIMEOUT` (20s) and logs failures instead of aborting. Registry now 52 tools (mcp: 29).
+**Security note:** httpx INFO logging prints the full Telegram bot URL (token) into the journal. Not changed here; consider `logging.getLogger("httpx").setLevel(WARNING)` and rotating the token.
+
+**Review (PR #27, /code-review high):** 9 findings; fixed reaction-target check, edit size cap + fallback, stray placeholder on typed replies, `!new` TTL + `/path` fallthrough, reconnect supervisor, exact button-hint strip, `config.save` unsetting cleared keys, concurrent+cancelled MCP connect, 0600 DB sidecars. Tests 209 -> 220.
+**Review round 2 (10 findings):** fixed byte-size splitting, cron fan-out isolation, fail-closed `MATRIX_ENCRYPTION`, `!new` swallowing input, lazy cron default needing a home room, MCP startup (sequential in-task + cancel cleanup), config/commands consolidation, per-install pickle key. Rejected as false positive: "handlers block the sync loop" — mautrix handlers registered with default `wait_sync=False` run via `background_task`, so replies/reactions can arrive while the agent awaits a confirmation. Tests 220 -> 230.
+**Review round 3:** fixed lossless final edit (split with edit renderer), per-room agent-run lock, legacy-store detection via real account row, `config.save(unset_keys=...)` (implicit unset removed — could wipe secrets), shared csv parser/confirmation helper. False positive: python-olm CI wheels (cp312 manylinux x86_64 wheel exists). Lesson: connecting MCP servers sequentially in the main task made `systemctl restart` hang until SIGKILL (anyio scope teardown in `disconnect_all` disturbs the main task); concurrent per-task connect shuts down in ~1s. Tests 230 -> 234.
+**Known follow-ups (not fixed):** the existing store (created 2026-11-08 before per-install keys) still uses the default pickle key — it can't be re-keyed in place; doctor shows 🟡. Hardening = reset `data/matrix_crypto.db*` + new bot device (needs a fresh login), or set `MATRIX_PICKLE_KEY` on a new store. `_run_cli` subprocess runner still duplicated with telegram.py. httpx INFO logs leak the Telegram token.
+
+**State:** branch `feat/matrix-channel`, PR #27 open against `dev`.
+
 ## 2026-11-02 · Claude Code (local) · chore(ci): add DEVLOG check workflow
 
 **Mode:** Builder

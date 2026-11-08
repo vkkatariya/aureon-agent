@@ -28,12 +28,14 @@ class CronScheduler:
     """
 
     def __init__(self, db_path: str, agent_runtime, channel_router,
-                 workspace_dir: str, default_chat_id: str = ""):
+                 workspace_dir: str, default_chat_id: str = "",
+                 matrix_home_room: str = ""):
         self.db_path = db_path
         self.agent = agent_runtime
         self.router = channel_router
         self.workspace_dir = workspace_dir
         self.default_chat_id = default_chat_id
+        self.matrix_home_room = matrix_home_room or ""
         self.db: CronDB | None = None
         self._loop_task: asyncio.Task | None = None
         self._in_flight: set[asyncio.Task] = set()
@@ -164,6 +166,20 @@ class CronScheduler:
         logger.info("cron: job %s (%s) finished — status=%s duration=%.1fs",
                      job_id, job["name"], status, duration)
 
+    def _target_for(self, channel_name: str, job: dict) -> str:
+        """Resolve the delivery target for a channel. Matrix room IDs ('!...')
+        and telegram/discord chat IDs are not interchangeable, so a job's
+        chat_id only applies to Matrix when it looks like a room ID; otherwise
+        fall back to MATRIX_HOME_ROOM."""
+        chat_id = job.get("chat_id") or ""
+        if channel_name == "matrix":
+            if chat_id.startswith("!"):
+                return chat_id
+            return self.matrix_home_room
+        if chat_id.startswith("!"):
+            chat_id = ""
+        return chat_id or self.default_chat_id
+
     async def _deliver(self, job: dict, status: str, output: str | None,
                        error: str | None, duration: float):
         """Deliver the job result to the configured channel."""
@@ -184,22 +200,31 @@ class CronScheduler:
             # No output — skip delivery
             return
 
-        # Determine chat_id
-        chat_id = job.get("chat_id") or self.default_chat_id
-        if not chat_id:
-            logger.warning("cron: no chat_id for job %s, skipping delivery",
-                           job["id"])
-            return
-
         try:
             if deliver == "all":
                 # Fan out to all connected channels
                 for channel_name in self.router.channels:
-                    session_key = f"{channel_name}:{chat_id}"
-                    await self.router.send_message(session_key, text)
+                    target = self._target_for(channel_name, job)
+                    if not target:
+                        continue
+                    try:
+                        await self.router.send_message(f"{channel_name}:{target}", text)
+                    except Exception as e:  # one down channel must not starve the rest
+                        logger.error("cron: delivery to %s failed for job %s: %s",
+                                     channel_name, job["id"], e)
+            elif deliver == "matrix":
+                room = self._target_for("matrix", job)
+                if not room:
+                    logger.warning("cron: no matrix room for job %s, skipping delivery", job["id"])
+                    return
+                await self.router.send_message(f"matrix:{room}", text)
             elif deliver in ("telegram", "discord"):
-                session_key = f"{deliver}:{chat_id}"
-                await self.router.send_message(session_key, text)
+                chat_id = self._target_for(deliver, job)
+                if not chat_id:
+                    logger.warning("cron: no chat_id for job %s, skipping delivery",
+                                   job["id"])
+                    return
+                await self.router.send_message(f"{deliver}:{chat_id}", text)
             else:
                 logger.warning("cron: unknown deliver type %r for job %s",
                                deliver, job["id"])

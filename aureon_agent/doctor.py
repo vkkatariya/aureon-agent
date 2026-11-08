@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import shutil
 import sys
@@ -12,6 +13,7 @@ from aureon_agent.tui import print_banner, print_table, print_status
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
 ENV_PATH = os.path.join(BASE_DIR, ".env")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
 def check_python() -> Tuple[str, str]:
     if sys.version_info >= (3, 12):
@@ -38,7 +40,7 @@ def check_env() -> Tuple[str, str]:
     if errors:
         return "❌", "Validation failed: " + "; ".join(errors)
 
-    if not config.TELEGRAM_BOT_TOKEN and not config.DISCORD_BOT_TOKEN:
+    if not (config.matrix_configured or config.TELEGRAM_BOT_TOKEN or config.DISCORD_BOT_TOKEN):
         return "🟡", "No channels configured"
 
     # Captain's command: Telegram allowlist check
@@ -123,6 +125,49 @@ def check_telegram() -> Tuple[str, str]:
         return "❌", "Invalid token"
     except Exception as e:
         return "❌", f"API error: {e}"
+
+_MXID_RE = re.compile(r"^@[^:\s]+:[^:\s]+(:\d+)?$")
+
+
+def check_matrix() -> Tuple[str, str]:
+    config = AureonConfig.from_file(ENV_PATH)
+    if not (config.MATRIX_USER_ID or config.MATRIX_ACCESS_TOKEN):
+        return "🟡", "Not configured"
+    if not config.matrix_configured:
+        return "❌", "MATRIX_USER_ID and MATRIX_ACCESS_TOKEN must both be set"
+    base = config.MATRIX_HOMESERVER.rstrip("/")
+    try:
+        httpx.get(f"{base}/_matrix/client/versions", timeout=5).raise_for_status()
+    except Exception as e:
+        return "❌", f"Homeserver unreachable: {e}"
+    try:
+        res = httpx.get(
+            f"{base}/_matrix/client/v3/account/whoami",
+            headers={"Authorization": f"Bearer {config.MATRIX_ACCESS_TOKEN}"},
+            timeout=5,
+        )
+        if res.status_code in (401, 403):
+            return "❌", "Access token rejected (401)"
+        res.raise_for_status()
+        who = res.json().get("user_id")
+    except Exception as e:
+        return "❌", f"whoami failed: {e}"
+    if who != config.MATRIX_USER_ID:
+        return "❌", f"Token belongs to {who}, not {config.MATRIX_USER_ID}"
+    allowed = config.matrix_allowed_users
+    if not allowed:
+        return "❌", "MATRIX_ALLOWED_USERS is empty"
+    bad = [u for u in allowed if not _MXID_RE.match(u)]
+    if bad:
+        return "❌", f"Invalid MXID in MATRIX_ALLOWED_USERS: {', '.join(sorted(bad))}"
+    if config.MATRIX_ENCRYPTION:
+        if not os.path.exists(os.path.join(DATA_DIR, "matrix_crypto.db")):
+            return "🟡", f"{who} authenticated; crypto store not yet created (created on first start)"
+        if not (os.getenv("MATRIX_PICKLE_KEY")
+                or os.path.exists(os.path.join(DATA_DIR, "matrix_pickle.key"))):
+            return "🟡", f"{who} OK, but crypto store uses the legacy default pickle key (see PR notes)"
+    return "✅", f"{who} @ {base}"
+
 
 def check_systemd() -> Tuple[str, str]:
     if not sys.platform.startswith("linux"):
@@ -226,6 +271,7 @@ def main():
         ("Claude CLI", check_claude_cli),
         ("Plan Node", check_plan_node),
         ("Ollama", check_ollama),
+        ("Matrix API", check_matrix),
         ("Telegram API", check_telegram),
         ("systemd daemon", check_systemd),
         ("Cron Scheduler", check_cron_scheduler),

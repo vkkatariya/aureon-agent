@@ -6,10 +6,11 @@ import argparse
 @patch("aureon_agent.setup.print_banner")
 @patch("aureon_agent.setup.step_existing_config")
 @patch("aureon_agent.setup.step_model")
+@patch("aureon_agent.setup.step_matrix")
 @patch("aureon_agent.setup.step_telegram")
 @patch("aureon_agent.setup.step_discord")
 @patch("aureon_agent.setup.step_daemon_skills")
-def test_setup_non_interactive(mock_daemon, mock_discord, mock_telegram, mock_model, mock_existing, mock_banner):
+def test_setup_non_interactive(mock_daemon, mock_discord, mock_telegram, mock_matrix, mock_model, mock_existing, mock_banner):
     mock_existing.return_value = AureonConfig()
     
     args = argparse.Namespace(
@@ -20,6 +21,10 @@ def test_setup_non_interactive(mock_daemon, mock_discord, mock_telegram, mock_mo
         telegram_bot_token="test_token",
         telegram_allowed_chats="123",
         discord_bot_token=None,
+        matrix_homeserver=None,
+        matrix_user_id="@aureon-agent:example.org",
+        matrix_access_token="tok",
+        matrix_allowed_users="@me:example.org",
         ollama_base_url=None,
         ollama_api_key=None,
         ollama_model=None
@@ -30,6 +35,7 @@ def test_setup_non_interactive(mock_daemon, mock_discord, mock_telegram, mock_mo
         mock_save.assert_called_once()
         
     mock_model.assert_called_once()
+    mock_matrix.assert_called_once()
     mock_telegram.assert_called_once()
     mock_discord.assert_called_once()
     mock_daemon.assert_called_once()

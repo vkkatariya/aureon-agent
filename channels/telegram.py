@@ -10,6 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
 from channels.base import Channel
+from channels.commands import SLASH_COMMANDS
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +30,6 @@ def _chunk_for_codeblock(text: str) -> list:
     text = text.strip()
     return [text[i:i + CODEBLOCK_CHUNK_LEN]
             for i in range(0, len(text), CODEBLOCK_CHUNK_LEN)] or [""]
-
-# Slash commands -> aureon-agent CLI subcommand (reuse 1:1, no logic duplication).
-# Nested subcommands (mcp/cron) handled specially below.
-SLASH_COMMANDS = {
-    "sessions": ["sessions"],
-    "doctor": ["doctor"],
-    "status": ["status"],
-    "version": ["version"],
-    "mcp": ["mcp", "list"],
-    "cron": ["cron", "list"],
-    "logs": ["logs"],
-    "skills": ["skills", "list"],
-}
 
 # /new confirmation inline-keyboard callback payloads (<= 64 bytes, no secrets).
 NEW_CONFIRM = "new_confirm"
@@ -90,6 +78,11 @@ class TelegramChannel(Channel):
         return await self._app.bot.send_message(
             chat_id=chat_id, text=text, parse_mode=parse_mode, reply_markup=reply_markup,
         )
+
+    async def send_confirmation(self, chat_id, text, confirm_data, cancel_data):
+        """Native Yes/No inline keyboard (used by ChannelRouter.send_confirmation)."""
+        keyboard = _build_confirm_keyboard("✅ Yes", "❌ No", confirm_data, cancel_data)
+        return await self.send_message(chat_id, text, reply_markup=keyboard)
 
     async def edit_message(self, chat_id, message_id, text):
         text_to_send = text or "…"

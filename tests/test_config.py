@@ -75,3 +75,93 @@ def test_config_openrouter():
         assert loaded.OLLAMA_BASE_URL == "https://openrouter.ai/api/v1"
         assert loaded.is_complete()
         assert len(loaded.validate()) == 0
+
+
+# ── Matrix ────────────────────────────────────────────────────────────────
+
+def test_matrix_env_parsing(monkeypatch):
+    monkeypatch.setenv("MATRIX_USER_ID", "@aureon-agent:example.org")
+    monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_secret_token_value")
+    monkeypatch.setenv("MATRIX_ALLOWED_USERS", "@a:example.org, @b:example.org")
+    monkeypatch.setenv("MATRIX_HOME_ROOM", "!room:example.org")
+    monkeypatch.setenv("MATRIX_ENCRYPTION", "false")
+    c = AureonConfig.from_env()
+    assert c.MATRIX_HOMESERVER == "https://matrix.auxois-wyrm.ts.net"  # default
+    assert c.MATRIX_DEVICE_ID == "AUREON_ARM64"
+    assert c.matrix_allowed_users == {"@a:example.org", "@b:example.org"}
+    assert c.MATRIX_HOME_ROOM == "!room:example.org"
+    assert c.MATRIX_ENCRYPTION is False
+    assert c.matrix_configured
+
+
+def test_matrix_encryption_defaults_true(monkeypatch):
+    monkeypatch.delenv("MATRIX_ENCRYPTION", raising=False)
+    assert AureonConfig.from_env().MATRIX_ENCRYPTION is True
+
+
+def test_matrix_requires_allowed_users():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok")
+    assert any("MATRIX_ALLOWED_USERS" in e for e in c.validate())
+    c.MATRIX_ALLOWED_USERS = "@me:example.org"
+    assert not any("MATRIX_ALLOWED_USERS" in e for e in c.validate())
+
+
+def test_matrix_alone_satisfies_channel_requirement():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                     MATRIX_ALLOWED_USERS="@me:example.org")
+    assert c.is_complete()
+
+
+def test_matrix_token_redacted():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org",
+                     MATRIX_ACCESS_TOKEN="syt_abcdefghijklmnop")
+    r = c.redact()
+    assert r.MATRIX_ACCESS_TOKEN == "syt_...mnop"
+    assert "abcdefgh" not in str(r)
+
+
+def test_matrix_file_roundtrip():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                     MATRIX_ALLOWED_USERS="@me:example.org",
+                     MATRIX_ENCRYPTION=False).save(path)
+        loaded = AureonConfig.from_file(path)
+        assert loaded.MATRIX_USER_ID == "@bot:example.org"
+        assert loaded.MATRIX_ENCRYPTION is False
+        assert loaded.matrix_allowed_users == {"@me:example.org"}
+
+
+def test_save_unsets_cleared_keys():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                         MATRIX_ALLOWED_USERS="@me:example.org", MATRIX_HOME_ROOM="!r:example.org")
+        c.save(path)
+        c.MATRIX_USER_ID = None
+        c.MATRIX_ACCESS_TOKEN = None
+        c.MATRIX_HOME_ROOM = None
+        c.save(path, unset_keys={"MATRIX_USER_ID", "MATRIX_ACCESS_TOKEN", "MATRIX_HOME_ROOM"})
+        loaded = AureonConfig.from_file(path)
+        assert loaded.MATRIX_USER_ID is None
+        assert loaded.MATRIX_ACCESS_TOKEN is None
+        assert loaded.MATRIX_HOME_ROOM is None
+        assert not loaded.matrix_configured
+
+
+def test_parse_bool_fails_closed_for_encryption(monkeypatch):
+    from aureon_agent.config import parse_bool
+    for raw in ("", "enable", "typo", None):
+        assert parse_bool(raw, True) is True
+    for raw in ("false", "0", "no", "off", "n", "disabled"):
+        assert parse_bool(raw, True) is False
+    monkeypatch.setenv("MATRIX_ENCRYPTION", "enable")
+    assert AureonConfig.from_env().MATRIX_ENCRYPTION is True
+
+
+def test_save_without_unset_keys_never_wipes_secrets():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        AureonConfig(TELEGRAM_BOT_TOKEN="123456789:ABCDEF", TELEGRAM_ALLOWED_CHATS="1").save(path)
+        AureonConfig().save(path)            # partial config: telegram fields are None/empty
+        assert AureonConfig.from_file(path).TELEGRAM_BOT_TOKEN == "123456789:ABCDEF"

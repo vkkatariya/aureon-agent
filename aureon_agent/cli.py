@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
 DATA_DIR = os.path.join(BASE_DIR, "data")
+MCP_CONNECT_TIMEOUT = int(os.getenv("MCP_CONNECT_TIMEOUT", "20"))
 
 
 def _parse_mcp_servers() -> list[dict]:
@@ -196,11 +197,28 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
 
     # Connect configured MCP servers (fail soft — log warning, continue without)
     if connect_mcp:
-        for server_cfg in _parse_mcp_servers():
-            ok = await mcp_manager.add_server(**server_cfg)
-            if ok:
-                logger.info("MCP server '%s' connected (%d tools)",
-                            server_cfg["server_name"], len(mcp_manager.clients[server_cfg["server_name"]].tools))
+        # Connect all servers concurrently under one bounded wait so a stalled
+        # server can't block channel startup (or other servers). Each connect runs
+        # in its own task, so a timeout cancels it there and MCPClient.connect
+        # reaps its subprocess in the task that entered the anyio scopes.
+        # (Connecting sequentially in this task made shutdown hang: the stdio
+        # scope teardown in disconnect_all() then disturbed the main task.)
+        tasks = {cfg["server_name"]: asyncio.ensure_future(mcp_manager.add_server(**cfg))
+                 for cfg in _parse_mcp_servers()}
+        if tasks:
+            _done, pending = await asyncio.wait(set(tasks.values()), timeout=MCP_CONNECT_TIMEOUT)
+            for name, task in tasks.items():
+                if task in pending:
+                    logger.warning("MCP server '%s' not ready after %ds — continuing without it",
+                                   name, MCP_CONNECT_TIMEOUT)
+                    task.cancel()
+                    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+                elif task.exception() is not None:
+                    logger.error("MCP server '%s' failed: %r — continuing without it",
+                                 name, task.exception())
+                elif task.result():
+                    logger.info("MCP server '%s' connected (%d tools)",
+                                name, len(mcp_manager.clients[name].tools))
 
     # ── Tool registry ─────────────────────────────────────────────
     registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)
@@ -238,6 +256,27 @@ async def main():
 
     router = ChannelRouter(agent, sessions, WORKSPACE_DIR)
 
+    # Matrix is the default channel: registered first so it leads the channel list.
+    from aureon_agent.config import AureonConfig
+    cfg = AureonConfig.from_env()
+    if cfg.matrix_configured:
+        from channels.matrix import MatrixChannel
+        if not cfg.matrix_allowed_users:
+            logger.warning("MATRIX_ALLOWED_USERS is empty — all Matrix messages will be dropped")
+        router.register("matrix", MatrixChannel(
+            homeserver=cfg.MATRIX_HOMESERVER,
+            user_id=cfg.MATRIX_USER_ID,
+            access_token=cfg.MATRIX_ACCESS_TOKEN,
+            router=router,
+            allowed_users=cfg.matrix_allowed_users,
+            device_id=cfg.MATRIX_DEVICE_ID,
+            home_room=cfg.MATRIX_HOME_ROOM,
+            encryption=cfg.MATRIX_ENCRYPTION,
+            data_dir=DATA_DIR,
+        ))
+    else:
+        logger.info("MATRIX_USER_ID/MATRIX_ACCESS_TOKEN not set, Matrix channel disabled")
+
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if telegram_token:
         allowed_chats = {c.strip() for c in os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",") if c.strip()}
@@ -271,6 +310,7 @@ async def main():
         channel_router=router,
         workspace_dir=WORKSPACE_DIR,
         default_chat_id=os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",")[0].strip(),
+        matrix_home_room=cfg.MATRIX_HOME_ROOM or "",
     )
     await cron.start()
     logger.info("cron scheduler started")

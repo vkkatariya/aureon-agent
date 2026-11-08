@@ -199,6 +199,48 @@ def step_model(config: AureonConfig, args):
         if not args.non_interactive:
             confirm("Proceed anyway?", default=True)
 
+def step_matrix(config: AureonConfig, args):
+    print_section("Matrix Channel", "Default channel: self-hosted Matrix (Conduit), allowlisted users, E2EE.")
+
+    if args.quick and config.matrix_configured and config.MATRIX_ALLOWED_USERS:
+        print_status("Matrix config already set, skipping (--quick).")
+        return
+
+    if args.non_interactive:
+        return
+
+    enable = confirm("Enable Matrix bot?", default=bool(config.MATRIX_ACCESS_TOKEN))
+    if not enable:
+        config.MATRIX_USER_ID = None
+        config.MATRIX_ACCESS_TOKEN = None
+        return
+
+    config.MATRIX_HOMESERVER = text("Homeserver URL:", default=config.MATRIX_HOMESERVER)
+    config.MATRIX_USER_ID = text("Bot User ID (e.g. @aureon-agent:auxois-wyrm.ts.net):",
+                                 default=config.MATRIX_USER_ID or "")
+    config.MATRIX_ACCESS_TOKEN = password("Bot Access Token:") or config.MATRIX_ACCESS_TOKEN
+    config.MATRIX_ALLOWED_USERS = text("Allowed User IDs (comma-separated MXIDs):",
+                                       default=config.MATRIX_ALLOWED_USERS)
+    if not config.MATRIX_ALLOWED_USERS:
+        print_status("MATRIX_ALLOWED_USERS is empty. All Matrix messages will be dropped.", "warn")
+    home = text("Home room ID for alerts/cron (blank to skip):", default=config.MATRIX_HOME_ROOM or "")
+    config.MATRIX_HOME_ROOM = home or None
+    config.MATRIX_ENCRYPTION = confirm("Enable E2EE?", default=config.MATRIX_ENCRYPTION)
+
+    if config.MATRIX_ACCESS_TOKEN:
+        import httpx
+        try:
+            with spinner("Validating token..."):
+                res = httpx.get(
+                    f"{config.MATRIX_HOMESERVER.rstrip('/')}/_matrix/client/v3/account/whoami",
+                    headers={"Authorization": f"Bearer {config.MATRIX_ACCESS_TOKEN}"}, timeout=5)
+            if res.status_code == 200:
+                print_status(f"Token valid. Bot: {res.json().get('user_id')}")
+            else:
+                print_status(f"Token rejected (HTTP {res.status_code})", "error")
+        except Exception as e:
+            print_status(f"Could not validate token: {e}", "warn")
+
 def step_telegram(config: AureonConfig, args):
     print_section("Telegram Channel", "Configure your primary communication channel.")
     
@@ -283,6 +325,14 @@ def run_setup(args):
     
     if args.non_interactive:
         # Override config with cli args
+        if getattr(args, "matrix_homeserver", None):
+            config.MATRIX_HOMESERVER = getattr(args, "matrix_homeserver")
+        if getattr(args, "matrix_user_id", None):
+            config.MATRIX_USER_ID = getattr(args, "matrix_user_id")
+        if getattr(args, "matrix_access_token", None):
+            config.MATRIX_ACCESS_TOKEN = getattr(args, "matrix_access_token")
+        if getattr(args, "matrix_allowed_users", None):
+            config.MATRIX_ALLOWED_USERS = getattr(args, "matrix_allowed_users")
         if args.telegram_bot_token:
             config.TELEGRAM_BOT_TOKEN = args.telegram_bot_token
         if args.telegram_allowed_chats:
@@ -296,6 +346,7 @@ def run_setup(args):
         if args.ollama_model:
             config.OLLAMA_MODEL = args.ollama_model
     
+    set_before = {k for k, v in config.__dict__.items() if v is not None}
     sections = [s.strip() for s in args.section.split(',')]
     all_sections = "all" in sections
     
@@ -303,12 +354,14 @@ def run_setup(args):
         if all_sections or "model" in sections:
             step_model(config, args)
         if all_sections or "channel" in sections:
+            step_matrix(config, args)
             step_telegram(config, args)
             step_discord(config, args)
         if all_sections or "daemon" in sections or "skills" in sections:
             step_daemon_skills(config, args)
             
-        config.save(ENV_PATH)
+        cleared = set_before - {k for k, v in config.__dict__.items() if v is not None}
+        config.save(ENV_PATH, unset_keys=cleared)
         print_status("Configuration saved successfully to .env")
         
         errors = config.validate()
@@ -332,6 +385,10 @@ def main():
     parser.add_argument("--section", default="all", help="Comma-separated sections (model,channel,daemon,skills,all)")
     
     # Overrides for non-interactive
+    parser.add_argument("--matrix-homeserver", help=argparse.SUPPRESS)
+    parser.add_argument("--matrix-user-id", help=argparse.SUPPRESS)
+    parser.add_argument("--matrix-access-token", help=argparse.SUPPRESS)
+    parser.add_argument("--matrix-allowed-users", help=argparse.SUPPRESS)
     parser.add_argument("--telegram-bot-token", help=argparse.SUPPRESS)
     parser.add_argument("--telegram-allowed-chats", help=argparse.SUPPRESS)
     parser.add_argument("--discord-bot-token", help=argparse.SUPPRESS)
