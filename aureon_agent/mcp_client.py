@@ -134,7 +134,9 @@ class MCPClient:
             prefixed_name = f"{self.prefix}_{self.server_name}_{tool.name}"
 
             # Translate MCP inputSchema → OpenAI parameters format
-            parameters = self._translate_schema(tool.inputSchema) if tool.inputSchema else {
+            # mcp>=2 renamed Tool.inputSchema -> input_schema; accept both.
+            raw_schema = getattr(tool, "input_schema", None) or getattr(tool, "inputSchema", None)
+            parameters = self._translate_schema(raw_schema) if raw_schema else {
                 "type": "object", "properties": {}
             }
 
