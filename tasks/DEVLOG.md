@@ -25,6 +25,11 @@
 
 **Next (Captain):** create `@aureon-agent:auxois-wyrm.ts.net` on Conduit, set `MATRIX_USER_ID`, `MATRIX_ACCESS_TOKEN`, `MATRIX_ALLOWED_USERS=@syntaxgrid:auxois-wyrm.ts.net` (+ optional `MATRIX_HOME_ROOM`) in `.env`, restart `aureon-agent.service`, run sub-task 10. Not merged to `dev`; awaiting review.
 
+**Live (2026-11-08 22:18):** Captain's `scripts/setup-matrix-bot.sh` (untracked, not committed) registered `@aureon-agent` and filled `.env`. `doctor` → Matrix API ✅. `aureon-agent.service` restarted: `channels: matrix, telegram`, E2EE store created, Matrix sync running. STILL OPEN: the DM from `@syntaxgrid` (streaming) and `!status`/`!help` formatting check in Element — needs Captain.
+
+**Pre-existing bug found + fixed on this branch:** installed `mcp` 2.3.0 renamed `Tool.inputSchema` → `input_schema`; `AttributeError` in `MCPClient._discover_tools` aborted `build_runtime`, leaving the service "active" but with NO channels (aiosqlite threads keep the process alive) — same on the 15:25 boot, so Telegram was likely down for hours. Fix: accept both attr names; `build_runtime` now waits on each MCP server with `MCP_CONNECT_TIMEOUT` (20s) and logs failures instead of aborting. Registry now 52 tools (mcp: 29).
+**Security note:** httpx INFO logging prints the full Telegram bot URL (token) into the journal. Not changed here; consider `logging.getLogger("httpx").setLevel(WARNING)` and rotating the token.
+
 **State:** branch `feat/matrix-channel`, pushed, no PR opened.
 
 ## 2026-11-02 · Claude Code (local) · chore(ci): add DEVLOG check workflow
