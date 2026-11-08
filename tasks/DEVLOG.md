@@ -2,6 +2,31 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-08 · Claude Code (local) · feat(channel): Matrix channel as default (branch `feat/matrix-channel`)
+
+**Mode:** Builder
+
+**Did:** implemented `tasks/kickoff-matrix-migration.md` sub-tasks 1–9 (code + tests). Live verification (sub-task 10) NOT done: no `@aureon-agent` bot account/token exists in `.env` yet.
+
+**Built:**
+- `channels/matrix.py` (new): `MatrixChannel` on mautrix 0.21. MXID allowlist (silent drop), auto-join invites only from allowed users (others rejected), 1000-id event dedupe, `!`/`/` dual-prefix commands (status/doctor/sessions/version/mcp/cron/logs/skills/new/lesson/help, CLI output in `<pre><code>`), streaming via `m.replace` edits throttled 1/s, Markdown→HTML (raw HTML escaped), 15K-char chunking, typing indicator, ✅/❌ reaction + typed yes/no confirmations, `!new` needs typed `yes`. E2EE: SQLite crypto + state stores in `data/matrix_crypto.db`, `OlmMachine`, refuses a store from a different device_id.
+- `aureon_agent/config.py`: `MATRIX_*` fields, validation (allowlist required when creds set; Matrix alone satisfies channel requirement), token redaction.
+- `channels/router.py`: `send_confirmation` no longer imports telegram; channels with native `send_confirmation` (Telegram) use it, others get plain "reply yes/no" text.
+- `aureon_agent/cli.py`: Matrix registered first when configured; `cron.py`/`cron_cli.py`: `--deliver matrix` (default when Matrix configured), `MATRIX_HOME_ROOM` fallback, `all` fan-out now resolves a per-channel target (Telegram chat ID no longer sent to Matrix); `doctor.py` `check_matrix` (versions + whoami + MXID format + token owner + crypto store); `status.py` Channels section; `setup.py` Matrix step + non-interactive flags; `repl.py` handoff help (`matrix:<room_id>` already worked, session id split is on first colon).
+
+**Decisions / gotchas:**
+- Added `asyncpg>=0.28` and `markdown-it-py>=3.0` to `requirements.txt` beyond the spec: mautrix SQL stores hard-import `asyncpg` even for SQLite (verified offline with a probe), and the HTML renderer needs markdown-it. `pyproject.toml` reads deps from `requirements.txt` (dynamic), so no separate edit needed.
+- Cross-signing is deliberately not bootstrapped (Conduit 0.10 UIA 401, per spec); device shows unverified, Megolm still works.
+- Commands table is imported from `channels.telegram.SLASH_COMMANDS` (no duplication, but couples matrix.py to the telegram module import).
+- Events older than startup are dropped only when there is no persisted sync token (first run / E2EE off).
+
+**Verified:** `pytest tests/` 209 passed (was 160; +49 across test_matrix_channel, test_router, test_config, test_cron, test_doctor, test_setup). `ruff check .` clean. Homeserver `https://matrix.auxois-wyrm.ts.net/_matrix/client/versions` → 200. `aureon-agent doctor` shows "Matrix API 🟡 Not configured" as expected. Crypto store init probed offline. NOT verified: real sync, E2EE round-trip, Element rendering.
+**Pre-existing, unrelated:** `tests/smoke.py` fails on missing skill `openclaw-health` (same on clean `dev`); doctor MCP check ❌ gmail binary missing.
+
+**Next (Captain):** create `@aureon-agent:auxois-wyrm.ts.net` on Conduit, set `MATRIX_USER_ID`, `MATRIX_ACCESS_TOKEN`, `MATRIX_ALLOWED_USERS=@syntaxgrid:auxois-wyrm.ts.net` (+ optional `MATRIX_HOME_ROOM`) in `.env`, restart `aureon-agent.service`, run sub-task 10. Not merged to `dev`; awaiting review.
+
+**State:** branch `feat/matrix-channel`, pushed, no PR opened.
+
 ## 2026-11-02 · Claude Code (local) · chore(ci): add DEVLOG check workflow
 
 **Mode:** Builder
