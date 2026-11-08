@@ -12,6 +12,14 @@ logger = logging.getLogger(__name__)
 BUTTON_HINT = "Tap ✅ Yes to proceed, or ❌ No to deny."
 
 
+def plain_confirmation_text(text, extra=""):
+    """Swap the button-oriented instruction for a typed-reply one (exact-match
+    strip, never a substring line filter). `extra` appends a channel-specific
+    hint, e.g. Matrix's reaction option."""
+    body = text.replace(BUTTON_HINT, "").rstrip()
+    return f"{body}\n\nReply **yes** to proceed or **no** to deny.{extra}"
+
+
 class ChannelRouter:
     def __init__(self, agent_runtime, session_manager, workspace_dir):
         self.agent = agent_runtime
@@ -65,9 +73,7 @@ class ChannelRouter:
 
     @staticmethod
     def _plain_confirmation_text(text):
-        """Swap the button-oriented instruction for a typed-reply one."""
-        body = text.replace(BUTTON_HINT, "").rstrip()
-        return f"{body}\n\nReply **yes** to proceed or **no** to deny."
+        return plain_confirmation_text(text)
 
     async def handle_message(self, channel_name, client_id, text, callbacks):
         session_id = await self.sessions.get_or_create_session(client_id, channel_name)

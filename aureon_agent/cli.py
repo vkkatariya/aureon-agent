@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE_DIR = os.path.join(BASE_DIR, "workspace")
 DATA_DIR = os.path.join(BASE_DIR, "data")
-MCP_CONNECT_TIMEOUT = int(os.getenv("MCP_CONNECT_TIMEOUT", "60"))
+MCP_CONNECT_TIMEOUT = int(os.getenv("MCP_CONNECT_TIMEOUT", "20"))
 
 
 def _parse_mcp_servers() -> list[dict]:
@@ -197,24 +197,28 @@ async def build_runtime(*, watch_skills=True, connect_mcp=True):
 
     # Connect configured MCP servers (fail soft — log warning, continue without)
     if connect_mcp:
-        # Sequential, in this task (anyio cancel scopes must be entered and exited
-        # in the same task as disconnect_all). A failing server is logged and
-        # skipped; a stalled one is abandoned after MCP_CONNECT_TIMEOUT.
-        for server_cfg in _parse_mcp_servers():
-            name = server_cfg["server_name"]
-            try:
-                ok = await asyncio.wait_for(mcp_manager.add_server(**server_cfg),
-                                            timeout=MCP_CONNECT_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.warning("MCP server '%s' not ready after %ds — continuing without it",
-                               name, MCP_CONNECT_TIMEOUT)
-                continue
-            except Exception as e:  # noqa: BLE001 — fail soft, never abort startup
-                logger.error("MCP server '%s' failed: %r — continuing without it", name, e)
-                continue
-            if ok:
-                logger.info("MCP server '%s' connected (%d tools)",
-                            name, len(mcp_manager.clients[name].tools))
+        # Connect all servers concurrently under one bounded wait so a stalled
+        # server can't block channel startup (or other servers). Each connect runs
+        # in its own task, so a timeout cancels it there and MCPClient.connect
+        # reaps its subprocess in the task that entered the anyio scopes.
+        # (Connecting sequentially in this task made shutdown hang: the stdio
+        # scope teardown in disconnect_all() then disturbed the main task.)
+        tasks = {cfg["server_name"]: asyncio.ensure_future(mcp_manager.add_server(**cfg))
+                 for cfg in _parse_mcp_servers()}
+        if tasks:
+            _done, pending = await asyncio.wait(set(tasks.values()), timeout=MCP_CONNECT_TIMEOUT)
+            for name, task in tasks.items():
+                if task in pending:
+                    logger.warning("MCP server '%s' not ready after %ds — continuing without it",
+                                   name, MCP_CONNECT_TIMEOUT)
+                    task.cancel()
+                    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+                elif task.exception() is not None:
+                    logger.error("MCP server '%s' failed: %r — continuing without it",
+                                 name, task.exception())
+                elif task.result():
+                    logger.info("MCP server '%s' connected (%d tools)",
+                                name, len(mcp_manager.clients[name].tools))
 
     # ── Tool registry ─────────────────────────────────────────────
     registry = ToolRegistry(skill_loader=skills, mcp_manager=mcp_manager if mcp_manager.clients else None)

@@ -492,6 +492,49 @@ def test_pickle_key_generated_per_install(tmp_path):
     assert ch._load_or_create_pickle_key("x") == key        # stable across restarts
 
 
+def test_db_has_account_checks_real_table(tmp_path):
+    import sqlite3
+    p = str(tmp_path / "matrix_crypto.db")
+    assert mx.db_has_account(p) is False                       # no file
+    conn = sqlite3.connect(p)
+    conn.execute("CREATE TABLE crypto_account (account_id TEXT)")
+    conn.commit()
+    assert mx.db_has_account(p) is False                       # schema only (half-created store)
+    conn.execute("INSERT INTO crypto_account VALUES ('@a:b')")
+    conn.commit()
+    conn.close()
+    assert mx.db_has_account(p) is True
+
+
+def test_final_answer_not_truncated_for_non_ascii():
+    ch = make(router=FakeRouter(response="日本語🙂" * 4000))
+    run(ch._on_message(msg(body="hello")))
+    rebuilt = ""
+    for _, _, c in ch.client.events[1:]:
+        rebuilt += c.get("m.new_content", c)["body"]
+    assert rebuilt == "日本語🙂" * 4000
+    for _, _, c in ch.client.events:
+        assert mx.event_size(c) <= mx.MAX_EVENT_BYTES
+
+
+def test_messages_in_one_room_are_serialized():
+    order = []
+
+    class SlowRouter(FakeRouter):
+        async def handle_message(self, channel, client_id, text, callbacks):
+            order.append(("start", text))
+            await asyncio.sleep(0.05)
+            order.append(("end", text))
+            return "ok"
+
+    async def go():
+        ch = make(router=SlowRouter())
+        await asyncio.gather(ch._on_message(msg(body="one")), ch._on_message(msg(body="two")))
+    run(go())
+    assert order in ([("start", "one"), ("end", "one"), ("start", "two"), ("end", "two")],
+                     [("start", "two"), ("end", "two"), ("start", "one"), ("end", "one")])
+
+
 def test_pickle_key_legacy_store_keeps_default(tmp_path):
     ch = make(data_dir=str(tmp_path))
     ch._store_has_account = True

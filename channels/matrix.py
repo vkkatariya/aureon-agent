@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import secrets
+import sqlite3
 import subprocess
 import sys
 import time
@@ -25,7 +26,8 @@ from mautrix.client import Client
 from mautrix.types import EventType, Membership, UserID
 
 from channels.base import Channel
-from channels.router import BUTTON_HINT
+from aureon_agent.config import parse_csv_set
+from channels.router import plain_confirmation_text
 from channels.commands import SLASH_COMMANDS
 
 logger = logging.getLogger(__name__)
@@ -123,9 +125,20 @@ def parse_command(text: str):
 
 
 def parse_allowed_users(value) -> set:
-    if isinstance(value, (set, frozenset, list, tuple)):
-        return {str(u).strip() for u in value if str(u).strip()}
-    return {u.strip() for u in (value or "").split(",") if u.strip()}
+    return parse_csv_set(value)
+
+
+def db_has_account(db_path: str) -> bool:
+    """True iff an Olm account row exists. Checked against the real table (not
+    file size) so a half-created store from a failed first start isn't mistaken
+    for a legacy one."""
+    if not os.path.exists(db_path):
+        return False
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            return conn.execute("SELECT COUNT(*) FROM crypto_account").fetchone()[0] > 0
+    except sqlite3.Error:
+        return False
 
 
 class MatrixChannel(Channel):
@@ -148,6 +161,7 @@ class MatrixChannel(Channel):
         self._state_db = None
         self._seen = OrderedDict()           # event_id dedupe cache
         self._edit_locks = {}
+        self._room_locks = {}
         self._pending_new = {}               # room_id -> monotonic expiry for !new
         self._confirm_events = {}            # room_id -> event_id of the open confirmation prompt
         self._sync_task = None
@@ -202,7 +216,7 @@ class MatrixChannel(Channel):
             db_path = os.path.join(self.data_dir, "matrix_crypto.db")
             url = f"sqlite:{db_path}"
             # Must be decided before Database.start() creates the file.
-            self._store_has_account = os.path.exists(db_path) and os.path.getsize(db_path) > 0
+            self._store_has_account = db_has_account(db_path)
             self._crypto_db = Database.create(url, upgrade_table=PgCryptoStore.upgrade_table)
             self._state_db = Database.create(url, upgrade_table=PgStateStore.upgrade_table)
             old_umask = os.umask(0o077)  # DB + -wal/-shm are created owner-only
@@ -364,24 +378,26 @@ class MatrixChannel(Channel):
                     first = eid
         return first
 
+    def _edit_content(self, message_id, text):
+        new_content = self._content(text)
+        return {
+            "msgtype": "m.text",
+            "body": f"* {text}",
+            "format": "org.matrix.custom.html",
+            "formatted_body": f"* {new_content['formatted_body']}",
+            "m.new_content": new_content,
+            "m.relates_to": {"rel_type": "m.replace", "event_id": message_id},
+        }
+
     async def edit_message(self, chat_id, message_id, text):
+        """Replace a message. Used for streaming partials, where dropping the tail
+        is fine: the text is capped/shrunk to fit an event. The FINAL answer is
+        pre-split with split_to_fit in _on_chat so nothing is lost."""
         text = (text or "…")[:MATRIX_EDIT_MAX_LEN]
-
-        def build(t):
-            new_content = self._content(t)
-            return {
-                "msgtype": "m.text",
-                "body": f"* {t}",
-                "format": "org.matrix.custom.html",
-                "formatted_body": f"* {new_content['formatted_body']}",
-                "m.new_content": new_content,
-                "m.relates_to": {"rel_type": "m.replace", "event_id": message_id},
-            }
-
-        content = build(text)
+        content = self._edit_content(message_id, text)
         while event_size(content) > MAX_EVENT_BYTES and len(text) > 1:
-            text = text[: len(text) * 3 // 4]   # edits carry 4 copies; shrink to fit
-            content = build(text)
+            text = text[: len(text) * 3 // 4]
+            content = self._edit_content(message_id, text)
         try:
             await self.client.send_message_event(chat_id, EventType.ROOM_MESSAGE, content)
             return True
@@ -392,8 +408,7 @@ class MatrixChannel(Channel):
     async def send_confirmation(self, chat_id, text, confirm_data, cancel_data):
         """Native confirmation prompt (ChannelRouter.send_confirmation delegates
         here). Answer by typing yes/no, or by reacting ✅/❌ to *this* message."""
-        body = text.replace(BUTTON_HINT, "").rstrip()
-        body += "\n\nReply **yes** to proceed or **no** to deny, or react ✅ / ❌ to this message."
+        body = plain_confirmation_text(text, extra=" Or react ✅ / ❌ to this message.")
         event_id = await self.send_message(chat_id, body)
         self._confirm_events[str(chat_id)] = str(event_id)
         return event_id
@@ -537,6 +552,12 @@ class MatrixChannel(Channel):
             self._confirm_events.pop(room_id, None)
             return
 
+        # mautrix runs each event as its own task; serialize agent runs per room so
+        # two quick messages don't interleave on one session (Telegram is sequential).
+        async with self._room_locks.setdefault(room_id, asyncio.Lock()):
+            await self._run_chat(room_id, text)
+
+    async def _run_chat(self, room_id, text):
         placeholder = await self.send_message(room_id, "…")
         lock = self._edit_locks.setdefault(room_id, asyncio.Lock())
         state = {"text": "", "last_edit": 0.0}
@@ -570,12 +591,14 @@ class MatrixChannel(Channel):
                 await self.edit_message(room_id, placeholder, "(no response)")
             return
 
-        # Edits carry 4 copies of the text, so the first chunk uses the smaller edit cap.
-        chunks = chunk_text(response, MATRIX_EDIT_MAX_LEN)
-        if not await self.edit_message(room_id, placeholder, chunks[0]):
-            await self.send_message(room_id, chunks[0])  # never lose the final answer
-        for chunk in chunks[1:]:
-            await self.send_message(room_id, chunk)
+        # The first piece replaces the placeholder (an edit carries 4 copies of the
+        # text, so size it with the edit renderer); the rest go out as new messages.
+        pieces = split_to_fit(response, lambda t: self._edit_content(placeholder, t))
+        first = pieces[0][0]
+        if not await self.edit_message(room_id, placeholder, first):
+            await self.send_message(room_id, first)  # never lose the final answer
+        for piece, _content in pieces[1:]:
+            await self.send_message(room_id, piece)
 
     # ── commands ──────────────────────────────────────────────────────────
 

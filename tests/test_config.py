@@ -141,7 +141,7 @@ def test_save_unsets_cleared_keys():
         c.MATRIX_USER_ID = None
         c.MATRIX_ACCESS_TOKEN = None
         c.MATRIX_HOME_ROOM = None
-        c.save(path)
+        c.save(path, unset_keys={"MATRIX_USER_ID", "MATRIX_ACCESS_TOKEN", "MATRIX_HOME_ROOM"})
         loaded = AureonConfig.from_file(path)
         assert loaded.MATRIX_USER_ID is None
         assert loaded.MATRIX_ACCESS_TOKEN is None
@@ -157,3 +157,11 @@ def test_parse_bool_fails_closed_for_encryption(monkeypatch):
         assert parse_bool(raw, True) is False
     monkeypatch.setenv("MATRIX_ENCRYPTION", "enable")
     assert AureonConfig.from_env().MATRIX_ENCRYPTION is True
+
+
+def test_save_without_unset_keys_never_wipes_secrets():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        AureonConfig(TELEGRAM_BOT_TOKEN="123456789:ABCDEF", TELEGRAM_ALLOWED_CHATS="1").save(path)
+        AureonConfig().save(path)            # partial config: telegram fields are None/empty
+        assert AureonConfig.from_file(path).TELEGRAM_BOT_TOKEN == "123456789:ABCDEF"

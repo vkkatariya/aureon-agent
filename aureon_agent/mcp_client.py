@@ -98,7 +98,7 @@ class MCPClient:
             # Timed out / cancelled mid-handshake: reap the spawned server.
             if self._exit_stack:
                 try:
-                    await asyncio.shield(self._exit_stack.aclose())
+                    await self._exit_stack.aclose()   # same task that entered the anyio scopes
                 except BaseException:  # noqa: BLE001
                     pass
                 self._exit_stack = None

@@ -6,6 +6,13 @@ from dotenv import dotenv_values, set_key, unset_key
 _DEFAULT_MATRIX_HOMESERVER = "https://matrix.auxois-wyrm.ts.net"
 
 
+def parse_csv_set(value) -> set:
+    """Comma-separated string (or iterable) -> set of stripped, non-empty items."""
+    if isinstance(value, (set, frozenset, list, tuple)):
+        return {str(v).strip() for v in value if str(v).strip()}
+    return {v.strip() for v in (value or "").split(",") if v.strip()}
+
+
 def parse_bool(value, default: bool) -> bool:
     """Parse a boolean env value. Empty/unrecognised values return `default`,
     so a flag whose default is the safe setting (e.g. MATRIX_ENCRYPTION=True)
@@ -29,7 +36,7 @@ class AureonConfig:
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_ALLOWED_CHATS: str = ""
     DISCORD_BOT_TOKEN: Optional[str] = None
-    MATRIX_HOMESERVER: str = "https://matrix.auxois-wyrm.ts.net"
+    MATRIX_HOMESERVER: str = _DEFAULT_MATRIX_HOMESERVER
     MATRIX_USER_ID: Optional[str] = None
     MATRIX_ACCESS_TOKEN: Optional[str] = None
     MATRIX_DEVICE_ID: str = "AUREON_ARM64"
@@ -57,7 +64,7 @@ class AureonConfig:
 
     @property
     def matrix_allowed_users(self) -> set:
-        return {u.strip() for u in (self.MATRIX_ALLOWED_USERS or "").split(",") if u.strip()}
+        return parse_csv_set(self.MATRIX_ALLOWED_USERS)
 
     @classmethod
     def from_env(cls) -> "AureonConfig":
@@ -120,7 +127,10 @@ class AureonConfig:
             LOG_LEVEL=values.get("LOG_LEVEL", "INFO"),
         )
 
-    def save(self, path: str):
+    def save(self, path: str, unset_keys=()):
+        """Write set values to `path`. Keys named in `unset_keys` (and None here)
+        are removed; other None values leave the file untouched, so a partial
+        config can never wipe secrets it merely didn't load."""
         # Create empty if not exists to chmod
         if not os.path.exists(path):
             with open(path, "w") as f:
@@ -130,9 +140,7 @@ class AureonConfig:
         for key, value in self.__dict__.items():
             if value is not None:
                 set_key(path, key, str(value))
-            elif key in existing:
-                # Cleared in this config (e.g. a channel disabled in setup):
-                # unset it so the old value doesn't silently stay active.
+            elif key in unset_keys and key in existing:
                 unset_key(path, key)
 
     def validate(self) -> List[str]:

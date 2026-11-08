@@ -346,6 +346,7 @@ def run_setup(args):
         if args.ollama_model:
             config.OLLAMA_MODEL = args.ollama_model
     
+    set_before = {k for k, v in config.__dict__.items() if v is not None}
     sections = [s.strip() for s in args.section.split(',')]
     all_sections = "all" in sections
     
@@ -359,7 +360,8 @@ def run_setup(args):
         if all_sections or "daemon" in sections or "skills" in sections:
             step_daemon_skills(config, args)
             
-        config.save(ENV_PATH)
+        cleared = set_before - {k for k, v in config.__dict__.items() if v is not None}
+        config.save(ENV_PATH, unset_keys=cleared)
         print_status("Configuration saved successfully to .env")
         
         errors = config.validate()

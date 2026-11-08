@@ -10,7 +10,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
 from channels.base import Channel
-from channels.commands import SLASH_COMMANDS  # noqa: F401  (re-exported; tests import it from here)
+from channels.commands import SLASH_COMMANDS
 
 logger = logging.getLogger(__name__)
 
