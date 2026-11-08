@@ -199,6 +199,18 @@ def gather_status(data_dir: str = DATA_DIR) -> dict:
 
     active = _service_active()
 
+    matrix_user = os.getenv("MATRIX_USER_ID")
+    matrix_on = bool(matrix_user and os.getenv("MATRIX_ACCESS_TOKEN"))
+    matrix_allowed = [u.strip() for u in os.getenv("MATRIX_ALLOWED_USERS", "").split(",") if u.strip()]
+    encryption = os.getenv("MATRIX_ENCRYPTION", "true").strip().lower() in ("1", "true", "yes", "on")
+    if not matrix_on:
+        matrix_crypto = "n/a"
+    elif not encryption:
+        matrix_crypto = "off"
+    else:
+        matrix_crypto = ("E2EE on · store ready" if os.path.exists(os.path.join(data_dir, "matrix_crypto.db"))
+                         else "E2EE on · store not yet created")
+
     return {
         # A. service / uptime
         "version": __version__,
@@ -235,6 +247,12 @@ def gather_status(data_dir: str = DATA_DIR) -> dict:
         "cron_enabled": cron["enabled"],
         "cron_due_soon": cron["due_soon"],
         "mcp": mcp_details,
+        # F. matrix channel
+        "matrix": "configured" if matrix_on else "not configured",
+        "matrix_homeserver": os.getenv("MATRIX_HOMESERVER", "https://matrix.auxois-wyrm.ts.net") if matrix_on else "—",
+        "matrix_user": matrix_user if matrix_on else "—",
+        "matrix_allowed": ", ".join(matrix_allowed) if matrix_allowed else "none",
+        "matrix_crypto": matrix_crypto,
     }
 
 
@@ -283,6 +301,13 @@ def render_status(data: dict | None = None, data_dir: str = DATA_DIR) -> None:
         ("Duration", data["session_duration"]),
         ("Updated", data["session_updated"]),
         ("Agent running", data["agent_running"]),
+    ])
+    section("Channels", [
+        ("Matrix", data.get("matrix", "not configured")),
+        ("Homeserver", data.get("matrix_homeserver", "—")),
+        ("Bot", data.get("matrix_user", "—")),
+        ("Allowed", data.get("matrix_allowed", "none")),
+        ("Crypto", data.get("matrix_crypto", "n/a")),
     ])
     section("Services", [
         ("Cron", f"{data['cron_total']} jobs ({data['cron_enabled']} enabled, "

@@ -188,7 +188,7 @@ async def _handle_command(line, agent, sessions, router, state, rt):
         return None
     if cmd == "handoff":
         if not args:
-            print("Usage: /handoff <channel:id>  (e.g. telegram:723865496)")
+            print("Usage: /handoff <channel:id>  (e.g. telegram:723865496 or matrix:!room:server)")
             return None
         target = args[0]
         rows = await sessions.list_sessions()
@@ -216,7 +216,7 @@ def _print_help(rt=None):
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_row("[bold]/help[/bold]", "this message")
     table.add_row("[bold]/new[/bold]", "start a fresh session (clears current history)")
-    table.add_row("[bold]/handoff <id>[/bold]", "continue another session (e.g. telegram:723865496)")
+    table.add_row("[bold]/handoff <id>[/bold]", "continue another session (e.g. telegram:723865496, matrix:!room:server)")
     table.add_row("[bold]/sessions[/bold]", "list all chat sessions")
     table.add_row("[bold]/skills[/bold]", "list loaded doctrine skills")
     table.add_row("[bold]/status[/bold]", "agent status")
