@@ -38,25 +38,33 @@ class ChannelRouter:
             logger.error("Channel %s not found for send_message", channel_name)
 
     async def send_confirmation(self, session_id, text, confirm_data, cancel_data):
-        """Send a confirmation prompt with an inline Yes/No keyboard.
+        """Send a confirmation prompt.
 
-        Routes through the channel's send_message (which forwards reply_markup
-        to Telegram). Falls back to plain text on channels that ignore markup.
+        Channels with native confirm UI (Telegram inline keyboard) expose a
+        `send_confirmation` method and handle it themselves. All others get a
+        plain-text prompt; a typed "yes"/"no" reply resolves the pending future
+        via handle_message (Matrix additionally accepts ✅/❌ reactions).
         """
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
         if ":" not in session_id:
             logger.error("Invalid session_id format: %s", session_id)
             return
         channel_name, client_id = session_id.split(":", 1)
-        if channel_name not in self.channels:
+        channel = self.channels.get(channel_name)
+        if channel is None:
             logger.error("Channel %s not found for send_confirmation", channel_name)
             return
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Yes", callback_data=confirm_data),
-            InlineKeyboardButton("❌ No", callback_data=cancel_data),
-        ]])
-        await self.channels[channel_name].send_message(client_id, text, reply_markup=keyboard)
+        native = getattr(channel, "send_confirmation", None)
+        if native is not None:
+            await native(client_id, text, confirm_data, cancel_data)
+            return
+        await channel.send_message(client_id, self._plain_confirmation_text(text))
+
+    @staticmethod
+    def _plain_confirmation_text(text):
+        """Swap the button-oriented instruction for a typed-reply one."""
+        lines = [ln for ln in text.splitlines() if "Tap" not in ln]
+        body = "\n".join(lines).rstrip()
+        return f"{body}\n\nReply **yes** to proceed or **no** to deny."
 
     async def handle_message(self, channel_name, client_id, text, callbacks):
         session_id = await self.sessions.get_or_create_session(client_id, channel_name)

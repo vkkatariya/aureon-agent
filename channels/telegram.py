@@ -91,6 +91,11 @@ class TelegramChannel(Channel):
             chat_id=chat_id, text=text, parse_mode=parse_mode, reply_markup=reply_markup,
         )
 
+    async def send_confirmation(self, chat_id, text, confirm_data, cancel_data):
+        """Native Yes/No inline keyboard (used by ChannelRouter.send_confirmation)."""
+        keyboard = _build_confirm_keyboard("✅ Yes", "❌ No", confirm_data, cancel_data)
+        return await self.send_message(chat_id, text, reply_markup=keyboard)
+
     async def edit_message(self, chat_id, message_id, text):
         text_to_send = text or "…"
         logger.info("edit_message: chat_id=%s message_id=%s text=%r (len=%d)", chat_id, message_id, text_to_send[:200] if text_to_send else "<empty>", len(text_to_send))
