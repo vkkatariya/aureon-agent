@@ -16,8 +16,6 @@ import logging
 import os
 import secrets
 import sqlite3
-import subprocess
-import sys
 import time
 from collections import OrderedDict
 
@@ -28,7 +26,7 @@ from mautrix.types import EventType, Membership, UserID
 from channels.base import Channel
 from aureon_agent.config import parse_csv_set
 from channels.router import plain_confirmation_text
-from channels.commands import SLASH_COMMANDS
+from channels.commands import SLASH_COMMANDS, run_cli
 
 logger = logging.getLogger(__name__)
 
@@ -635,23 +633,10 @@ class MatrixChannel(Channel):
             return
 
         await self.send_action(room_id, "typing")
-        out = await self._run_cli(cmd, cli_args)
+        out = await run_cli(cmd, cli_args, "!")
         await self._stop_typing(room_id)
         for chunk in chunk_text(out, MATRIX_MAX_LEN - 1000):
             await self.send_message(room_id, chunk, code=True)
-
-    @staticmethod
-    async def _run_cli(cmd, cli_args) -> str:
-        try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                [sys.executable, "-m", "aureon_agent.__main__", *cli_args],
-                capture_output=True, text=True, timeout=60,
-            )
-            out = (proc.stdout or proc.stderr or "").strip()
-        except Exception as e:
-            out = f"Error running !{cmd}: {e}"
-        return out or f"(!{cmd} produced no output)"
 
     async def _finish_new(self, room_id, confirmed):
         if not confirmed:
