@@ -1,6 +1,6 @@
 # CLAUDE.md
 > This file provides guidance to Claude Code (claude.ai/code) when working on this repository.
-> Project-specific instructions. Workflow conventions live in `./workflow/`.
+> Project-specific instructions. Workflow conventions live in `./AGENTS-WORKFLOW.md`.
 
 ---
 
@@ -14,7 +14,7 @@ Before any meaningful work, read these files in order:
 4. `tasks/lessons.md` — active prevention rules
 5. `tasks/kickoff-aureon-agent.md` — the full spec for this project (read after the 4 above)
 
-**This project runs in the dual-session model** (see `workflow/SESSION-WORKFLOW.md` v3):
+**This project runs in the dual-session model** (see `AGENTS-WORKFLOW.md`):
 
 - **Local session** (this is normally the one you are): `[aureon-agent]-local`
   - Host: athena tmux
@@ -60,23 +60,14 @@ workspace/
 
 **To edit doctrine:** edit the source at `~/.openclaw/workspace/`, not the symlinks. Symlinks just resolve; the source files live outside this repo. If symlinks are broken on a fresh clone, see `README.md` §"Workspace" for the restore snippet.
 
-## Workflow references (symlinked, homelab-only)
+## Workflow reference (symlinked, homelab-only)
 
-The `./workflow/` directory is a symlink to `~/dev-shared/workflow/` — same path on every machine via mutagen sync. **Do not commit it** (already in `.gitignore`). Read workflow files on demand, not at every session start:
-
-- `./workflow/SESSION-WORKFLOW.md` — Claude Code session lifecycle, dual-session (local + cloud), no lineage branches, /remote-control, compaction
-- `./workflow/AI-ROUTING.md` — L1/L2/L3 layer model, tool vs agent routing
-- `./workflow/GIT-GITHUB-BLUEPRINT.md` — branch/commit/PR conventions
-- `./workflow/agents_workflow/AI-AGENTS-ORCHESTRATION.md` — sub-agent dispatch patterns
-- `./workflow/CLAUDE-MD-TEMPLATE.md` — canonical template for new project CLAUDE.md files
-- `./workflow/TODAY.md` — daily task list
-- `./workflow/PROJECTS.md` — cross-project statuses
+`./AGENTS-WORKFLOW.md` is a symlink to `~/dev-shared/workflow/agents_workflow/AGENTS-WORKFLOW.md` — same path on every machine via mutagen sync. **Do not commit it** (already in `.gitignore`). This is the one file an agent reads to know how Vishal works (self-contained: session lifecycle, dual-session, routing, git/PR conventions, sub-agent dispatch).
 
 If the symlink is broken on a fresh clone, recreate it:
 ```bash
-ln -sf ~/dev-shared/workflow ./workflow
+ln -sf ~/dev-shared/workflow/agents_workflow/AGENTS-WORKFLOW.md ./AGENTS-WORKFLOW.md
 ```
-
 ## Compaction + /remote-control (project-specific)
 
 - **/remote-control** is the real command (not `/rc` — that's hallucinated)

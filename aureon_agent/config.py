@@ -8,18 +8,42 @@ class AureonConfig:
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434/v1"
     OLLAMA_API_KEY: Optional[str] = None
     OLLAMA_MODEL: str = "minimax-m2.5:cloud"
+    OPENROUTER_BASE_URL: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_MODEL: Optional[str] = None
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_ALLOWED_CHATS: str = ""
     DISCORD_BOT_TOKEN: Optional[str] = None
     HEALTH_PORT: str = "7777"
     LOG_LEVEL: str = "INFO"
 
+    @property
+    def base_url(self) -> str:
+        return self.OPENROUTER_BASE_URL or self.OLLAMA_BASE_URL
+
+    @property
+    def api_key(self) -> Optional[str]:
+        return self.OPENROUTER_API_KEY or self.OLLAMA_API_KEY
+
+    @property
+    def model(self) -> str:
+        return self.OPENROUTER_MODEL or self.OLLAMA_MODEL
+
     @classmethod
     def from_env(cls) -> "AureonConfig":
+        openrouter_url = os.getenv("OPENROUTER_BASE_URL")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        openrouter_model = os.getenv("OPENROUTER_MODEL")
+        ollama_url = openrouter_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+        ollama_key = openrouter_key or os.getenv("OLLAMA_API_KEY")
+        ollama_model = openrouter_model or os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud")
         return cls(
-            OLLAMA_BASE_URL=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-            OLLAMA_API_KEY=os.getenv("OLLAMA_API_KEY"),
-            OLLAMA_MODEL=os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud"),
+            OLLAMA_BASE_URL=ollama_url,
+            OLLAMA_API_KEY=ollama_key,
+            OLLAMA_MODEL=ollama_model,
+            OPENROUTER_BASE_URL=openrouter_url,
+            OPENROUTER_API_KEY=openrouter_key,
+            OPENROUTER_MODEL=openrouter_model,
             TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN"),
             TELEGRAM_ALLOWED_CHATS=os.getenv("TELEGRAM_ALLOWED_CHATS", ""),
             DISCORD_BOT_TOKEN=os.getenv("DISCORD_BOT_TOKEN"),
@@ -32,10 +56,19 @@ class AureonConfig:
         if not os.path.exists(path):
             return cls()
         values = dotenv_values(path)
+        openrouter_url = values.get("OPENROUTER_BASE_URL")
+        openrouter_key = values.get("OPENROUTER_API_KEY")
+        openrouter_model = values.get("OPENROUTER_MODEL")
+        ollama_url = openrouter_url or values.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1"
+        ollama_key = openrouter_key or values.get("OLLAMA_API_KEY")
+        ollama_model = openrouter_model or values.get("OLLAMA_MODEL") or "minimax-m2.5:cloud"
         return cls(
-            OLLAMA_BASE_URL=values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-            OLLAMA_API_KEY=values.get("OLLAMA_API_KEY"),
-            OLLAMA_MODEL=values.get("OLLAMA_MODEL", "minimax-m2.5:cloud"),
+            OLLAMA_BASE_URL=ollama_url,
+            OLLAMA_API_KEY=ollama_key,
+            OLLAMA_MODEL=ollama_model,
+            OPENROUTER_BASE_URL=openrouter_url,
+            OPENROUTER_API_KEY=openrouter_key,
+            OPENROUTER_MODEL=openrouter_model,
             TELEGRAM_BOT_TOKEN=values.get("TELEGRAM_BOT_TOKEN"),
             TELEGRAM_ALLOWED_CHATS=values.get("TELEGRAM_ALLOWED_CHATS", ""),
             DISCORD_BOT_TOKEN=values.get("DISCORD_BOT_TOKEN"),
@@ -60,6 +93,8 @@ class AureonConfig:
         errors = []
         if self.OLLAMA_BASE_URL == "https://ollama.com/v1" and not self.OLLAMA_API_KEY:
             errors.append("OLLAMA_API_KEY is required for ollama.com base URL")
+        if self.OPENROUTER_BASE_URL and not (self.OPENROUTER_API_KEY or self.OLLAMA_API_KEY):
+            errors.append("OPENROUTER_API_KEY is required for OpenRouter base URL")
         if self.TELEGRAM_BOT_TOKEN and not self.TELEGRAM_ALLOWED_CHATS:
             errors.append("TELEGRAM_ALLOWED_CHATS is empty — all Telegram messages will be dropped")
         if self.HEALTH_PORT:
@@ -77,6 +112,9 @@ class AureonConfig:
             OLLAMA_BASE_URL=self.OLLAMA_BASE_URL,
             OLLAMA_API_KEY=redact_token(self.OLLAMA_API_KEY),
             OLLAMA_MODEL=self.OLLAMA_MODEL,
+            OPENROUTER_BASE_URL=self.OPENROUTER_BASE_URL,
+            OPENROUTER_API_KEY=redact_token(self.OPENROUTER_API_KEY),
+            OPENROUTER_MODEL=self.OPENROUTER_MODEL,
             TELEGRAM_BOT_TOKEN=redact_token(self.TELEGRAM_BOT_TOKEN),
             TELEGRAM_ALLOWED_CHATS=self.TELEGRAM_ALLOWED_CHATS,
             DISCORD_BOT_TOKEN=redact_token(self.DISCORD_BOT_TOKEN),

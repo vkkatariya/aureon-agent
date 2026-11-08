@@ -102,9 +102,13 @@ def check_plan_node() -> Tuple[str, str]:
 def check_ollama() -> Tuple[str, str]:
     config = AureonConfig.from_file(ENV_PATH)
     try:
-        res = httpx.get(f"{config.OLLAMA_BASE_URL}/models", timeout=3)
+        base_url = config.base_url
+        headers = {}
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
+        res = httpx.get(f"{base_url}/models", headers=headers, timeout=3)
         res.raise_for_status()
-        return "✅", f"Reachable ({config.OLLAMA_BASE_URL})"
+        return "✅", f"Reachable ({base_url})"
     except Exception as e:
         return "❌", f"Unreachable: {e}"
 
