@@ -170,11 +170,11 @@ def test_dual_prefix_parse_identical():
 def test_status_via_bang_and_slash_route_identically(monkeypatch):
     calls = []
 
-    async def fake_cli(cmd, cli_args):
+    async def fake_cli(cmd, cli_args, prefix="/"):
         calls.append((cmd, cli_args))
         return "OUTPUT <b>"
 
-    monkeypatch.setattr(MatrixChannel, "_run_cli", staticmethod(fake_cli))
+    monkeypatch.setattr("channels.matrix.run_cli", fake_cli)
     for prefix in ("!", "/"):
         ch = make()
         run(ch._on_message(msg(body=f"{prefix}status")))

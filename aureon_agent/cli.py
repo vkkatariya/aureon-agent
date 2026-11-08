@@ -23,6 +23,10 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+# Telegram puts the bot token in request URLs: redact it from every log record
+# and keep httpx's per-request INFO lines out of the journal.
+from aureon_agent.logsafe import install as _install_log_safety  # noqa: E402
+_install_log_safety()
 logger = logging.getLogger("aureon-agent")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

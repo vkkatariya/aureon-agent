@@ -2,15 +2,13 @@
 throttled to 1 edit/sec, 4096-char reply chunking, and /slash command surface."""
 import asyncio
 import logging
-import subprocess
-import sys
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters
 
 from channels.base import Channel
-from channels.commands import SLASH_COMMANDS
+from channels.commands import SLASH_COMMANDS, run_cli
 
 logger = logging.getLogger(__name__)
 
@@ -143,18 +141,7 @@ class TelegramChannel(Channel):
             return
 
         await self.send_action(chat_id, "typing")
-        try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                [sys.executable, "-m", "aureon_agent.__main__", *cli_args],
-                capture_output=True, text=True, timeout=60,
-            )
-            out = (proc.stdout or proc.stderr or "").strip()
-        except Exception as e:
-            out = f"Error running /{cmd}: {e}"
-
-        if not out:
-            out = f"(/ {cmd} produced no output)"
+        out = await run_cli(cmd, cli_args)
         # Wrap CLI output (Rich tables) in a MarkdownV2 code block so Telegram
         # renders it as aligned monospace — box-drawing chars and column
         # alignment collapse in plain text. Chunk first (leaving room for the
