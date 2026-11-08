@@ -623,3 +623,55 @@ class TestErrorPath(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMatrixDelivery(unittest.TestCase):
+    """cron _deliver: matrix target + 'all' fan-out resolve per-channel targets."""
+
+    def _sched(self, home_room="!home:example.org"):
+        from aureon_agent.cron import CronScheduler
+        router = MagicMock()
+        router.channels = {"matrix": object(), "telegram": object()}
+        router.send_message = AsyncMock()
+        sched = CronScheduler("x.db", MagicMock(), router, ".",
+                              default_chat_id="723865496", matrix_home_room=home_room)
+        return sched, router
+
+    def _job(self, **kw):
+        job = {"id": "j1", "name": "n", "deliver": "matrix", "chat_id": None}
+        job.update(kw)
+        return job
+
+    def test_matrix_falls_back_to_home_room(self):
+        sched, router = self._sched()
+        asyncio.run(sched._deliver(self._job(), "success", "out", None, 1.0))
+        router.send_message.assert_awaited_once()
+        assert router.send_message.await_args.args[0] == "matrix:!home:example.org"
+
+    def test_matrix_uses_job_room_when_room_id(self):
+        sched, router = self._sched()
+        asyncio.run(sched._deliver(self._job(chat_id="!other:example.org"), "success", "out", None, 1.0))
+        assert router.send_message.await_args.args[0] == "matrix:!other:example.org"
+
+    def test_matrix_ignores_telegram_chat_id(self):
+        sched, router = self._sched()
+        asyncio.run(sched._deliver(self._job(chat_id="723865496"), "success", "out", None, 1.0))
+        assert router.send_message.await_args.args[0] == "matrix:!home:example.org"
+
+    def test_matrix_without_room_skips(self):
+        sched, router = self._sched(home_room="")
+        asyncio.run(sched._deliver(self._job(), "success", "out", None, 1.0))
+        router.send_message.assert_not_awaited()
+
+    def test_all_fans_out_with_per_channel_targets(self):
+        sched, router = self._sched()
+        asyncio.run(sched._deliver(self._job(deliver="all", chat_id="723865496"),
+                                   "success", "out", None, 1.0))
+        keys = sorted(c.args[0] for c in router.send_message.await_args_list)
+        assert keys == ["matrix:!home:example.org", "telegram:723865496"]
+
+    def test_telegram_delivery_unchanged(self):
+        sched, router = self._sched()
+        asyncio.run(sched._deliver(self._job(deliver="telegram", chat_id=None),
+                                   "success", "out", None, 1.0))
+        assert router.send_message.await_args.args[0] == "telegram:723865496"

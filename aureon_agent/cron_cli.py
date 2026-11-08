@@ -40,6 +40,20 @@ def _format_ts(ts: float | None) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
 
 
+def _default_deliver() -> str:
+    """'matrix' when Matrix credentials are present (env or .env), else 'telegram'."""
+    if os.getenv("MATRIX_USER_ID") and os.getenv("MATRIX_ACCESS_TOKEN"):
+        return "matrix"
+    try:
+        from aureon_agent.config import AureonConfig
+        env_path = os.path.join(BASE_DIR, ".env")
+        if AureonConfig.from_file(env_path).matrix_configured:
+            return "matrix"
+    except Exception:
+        pass
+    return "telegram"
+
+
 async def _get_db() -> CronDB:
     db = CronDB(DB_PATH)
     await db.connect()
@@ -139,7 +153,9 @@ async def _cmd_create(args):
 
     # Default chat_id from env
     chat_id = args.chat_id
-    if not chat_id:
+    if not chat_id and args.deliver != "matrix":
+        # Matrix jobs resolve to MATRIX_HOME_ROOM at delivery time; a Telegram
+        # chat ID would be meaningless there.
         chat_id = os.getenv("TELEGRAM_ALLOWED_CHATS", "").split(",")[0].strip() or None
 
     db = await _get_db()
@@ -332,9 +348,10 @@ def register_cron_subparser(subparsers):
     p_create.add_argument("--name", required=True, help="Job name")
     p_create.add_argument("--prompt", required=True, help="Self-contained task instruction")
     p_create.add_argument("--skills", default="", help="Comma-separated skill names")
-    p_create.add_argument("--deliver", default="telegram",
-                          choices=["telegram", "discord", "local", "all"],
-                          help="Delivery channel (default: telegram)")
+    default_deliver = _default_deliver()
+    p_create.add_argument("--deliver", default=default_deliver,
+                          choices=["matrix", "telegram", "discord", "local", "all"],
+                          help=f"Delivery channel (default: {default_deliver})")
     p_create.add_argument("--chat-id", default=None, help="Chat ID for delivery")
     p_create.add_argument("--model", default=None, help="Model override")
     p_create.add_argument("--timeout-sec", type=int, default=300, help="Per-run timeout (default: 300)")
