@@ -75,3 +75,58 @@ def test_config_openrouter():
         assert loaded.OLLAMA_BASE_URL == "https://openrouter.ai/api/v1"
         assert loaded.is_complete()
         assert len(loaded.validate()) == 0
+
+
+# ── Matrix ────────────────────────────────────────────────────────────────
+
+def test_matrix_env_parsing(monkeypatch):
+    monkeypatch.setenv("MATRIX_USER_ID", "@aureon-agent:example.org")
+    monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "syt_secret_token_value")
+    monkeypatch.setenv("MATRIX_ALLOWED_USERS", "@a:example.org, @b:example.org")
+    monkeypatch.setenv("MATRIX_HOME_ROOM", "!room:example.org")
+    monkeypatch.setenv("MATRIX_ENCRYPTION", "false")
+    c = AureonConfig.from_env()
+    assert c.MATRIX_HOMESERVER == "https://matrix.auxois-wyrm.ts.net"  # default
+    assert c.MATRIX_DEVICE_ID == "AUREON_ARM64"
+    assert c.matrix_allowed_users == {"@a:example.org", "@b:example.org"}
+    assert c.MATRIX_HOME_ROOM == "!room:example.org"
+    assert c.MATRIX_ENCRYPTION is False
+    assert c.matrix_configured
+
+
+def test_matrix_encryption_defaults_true(monkeypatch):
+    monkeypatch.delenv("MATRIX_ENCRYPTION", raising=False)
+    assert AureonConfig.from_env().MATRIX_ENCRYPTION is True
+
+
+def test_matrix_requires_allowed_users():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok")
+    assert any("MATRIX_ALLOWED_USERS" in e for e in c.validate())
+    c.MATRIX_ALLOWED_USERS = "@me:example.org"
+    assert not any("MATRIX_ALLOWED_USERS" in e for e in c.validate())
+
+
+def test_matrix_alone_satisfies_channel_requirement():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                     MATRIX_ALLOWED_USERS="@me:example.org")
+    assert c.is_complete()
+
+
+def test_matrix_token_redacted():
+    c = AureonConfig(MATRIX_USER_ID="@bot:example.org",
+                     MATRIX_ACCESS_TOKEN="syt_abcdefghijklmnop")
+    r = c.redact()
+    assert r.MATRIX_ACCESS_TOKEN == "syt_...mnop"
+    assert "abcdefgh" not in str(r)
+
+
+def test_matrix_file_roundtrip():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, ".env")
+        AureonConfig(MATRIX_USER_ID="@bot:example.org", MATRIX_ACCESS_TOKEN="tok",
+                     MATRIX_ALLOWED_USERS="@me:example.org",
+                     MATRIX_ENCRYPTION=False).save(path)
+        loaded = AureonConfig.from_file(path)
+        assert loaded.MATRIX_USER_ID == "@bot:example.org"
+        assert loaded.MATRIX_ENCRYPTION is False
+        assert loaded.matrix_allowed_users == {"@me:example.org"}

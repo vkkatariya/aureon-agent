@@ -3,6 +3,15 @@ from dataclasses import dataclass
 from typing import List, Optional
 from dotenv import dotenv_values, set_key
 
+_DEFAULT_MATRIX_HOMESERVER = "https://matrix.auxois-wyrm.ts.net"
+
+
+def _parse_bool(value, default: bool) -> bool:
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class AureonConfig:
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434/v1"
@@ -14,6 +23,13 @@ class AureonConfig:
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_ALLOWED_CHATS: str = ""
     DISCORD_BOT_TOKEN: Optional[str] = None
+    MATRIX_HOMESERVER: str = "https://matrix.auxois-wyrm.ts.net"
+    MATRIX_USER_ID: Optional[str] = None
+    MATRIX_ACCESS_TOKEN: Optional[str] = None
+    MATRIX_DEVICE_ID: str = "AUREON_ARM64"
+    MATRIX_ALLOWED_USERS: str = ""
+    MATRIX_HOME_ROOM: Optional[str] = None
+    MATRIX_ENCRYPTION: bool = True
     HEALTH_PORT: str = "7777"
     LOG_LEVEL: str = "INFO"
 
@@ -28,6 +44,14 @@ class AureonConfig:
     @property
     def model(self) -> str:
         return self.OPENROUTER_MODEL or self.OLLAMA_MODEL
+
+    @property
+    def matrix_configured(self) -> bool:
+        return bool(self.MATRIX_HOMESERVER and self.MATRIX_USER_ID and self.MATRIX_ACCESS_TOKEN)
+
+    @property
+    def matrix_allowed_users(self) -> set:
+        return {u.strip() for u in (self.MATRIX_ALLOWED_USERS or "").split(",") if u.strip()}
 
     @classmethod
     def from_env(cls) -> "AureonConfig":
@@ -47,6 +71,13 @@ class AureonConfig:
             TELEGRAM_BOT_TOKEN=os.getenv("TELEGRAM_BOT_TOKEN"),
             TELEGRAM_ALLOWED_CHATS=os.getenv("TELEGRAM_ALLOWED_CHATS", ""),
             DISCORD_BOT_TOKEN=os.getenv("DISCORD_BOT_TOKEN"),
+            MATRIX_HOMESERVER=os.getenv("MATRIX_HOMESERVER") or _DEFAULT_MATRIX_HOMESERVER,
+            MATRIX_USER_ID=os.getenv("MATRIX_USER_ID"),
+            MATRIX_ACCESS_TOKEN=os.getenv("MATRIX_ACCESS_TOKEN"),
+            MATRIX_DEVICE_ID=os.getenv("MATRIX_DEVICE_ID") or "AUREON_ARM64",
+            MATRIX_ALLOWED_USERS=os.getenv("MATRIX_ALLOWED_USERS", ""),
+            MATRIX_HOME_ROOM=os.getenv("MATRIX_HOME_ROOM"),
+            MATRIX_ENCRYPTION=_parse_bool(os.getenv("MATRIX_ENCRYPTION"), True),
             HEALTH_PORT=os.getenv("HEALTH_PORT", "7777"),
             LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
         )
@@ -72,6 +103,13 @@ class AureonConfig:
             TELEGRAM_BOT_TOKEN=values.get("TELEGRAM_BOT_TOKEN"),
             TELEGRAM_ALLOWED_CHATS=values.get("TELEGRAM_ALLOWED_CHATS", ""),
             DISCORD_BOT_TOKEN=values.get("DISCORD_BOT_TOKEN"),
+            MATRIX_HOMESERVER=values.get("MATRIX_HOMESERVER") or _DEFAULT_MATRIX_HOMESERVER,
+            MATRIX_USER_ID=values.get("MATRIX_USER_ID"),
+            MATRIX_ACCESS_TOKEN=values.get("MATRIX_ACCESS_TOKEN"),
+            MATRIX_DEVICE_ID=values.get("MATRIX_DEVICE_ID") or "AUREON_ARM64",
+            MATRIX_ALLOWED_USERS=values.get("MATRIX_ALLOWED_USERS") or "",
+            MATRIX_HOME_ROOM=values.get("MATRIX_HOME_ROOM"),
+            MATRIX_ENCRYPTION=_parse_bool(values.get("MATRIX_ENCRYPTION"), True),
             HEALTH_PORT=values.get("HEALTH_PORT", "7777"),
             LOG_LEVEL=values.get("LOG_LEVEL", "INFO"),
         )
@@ -97,6 +135,8 @@ class AureonConfig:
             errors.append("OPENROUTER_API_KEY is required for OpenRouter base URL")
         if self.TELEGRAM_BOT_TOKEN and not self.TELEGRAM_ALLOWED_CHATS:
             errors.append("TELEGRAM_ALLOWED_CHATS is empty — all Telegram messages will be dropped")
+        if (self.MATRIX_USER_ID or self.MATRIX_ACCESS_TOKEN) and not self.matrix_allowed_users:
+            errors.append("MATRIX_ALLOWED_USERS is empty — all Matrix messages will be dropped")
         if self.HEALTH_PORT:
             if not str(self.HEALTH_PORT).isdigit():
                 errors.append("HEALTH_PORT must be an integer")
@@ -118,13 +158,20 @@ class AureonConfig:
             TELEGRAM_BOT_TOKEN=redact_token(self.TELEGRAM_BOT_TOKEN),
             TELEGRAM_ALLOWED_CHATS=self.TELEGRAM_ALLOWED_CHATS,
             DISCORD_BOT_TOKEN=redact_token(self.DISCORD_BOT_TOKEN),
+            MATRIX_HOMESERVER=self.MATRIX_HOMESERVER,
+            MATRIX_USER_ID=self.MATRIX_USER_ID,
+            MATRIX_ACCESS_TOKEN=redact_token(self.MATRIX_ACCESS_TOKEN),
+            MATRIX_DEVICE_ID=self.MATRIX_DEVICE_ID,
+            MATRIX_ALLOWED_USERS=self.MATRIX_ALLOWED_USERS,
+            MATRIX_HOME_ROOM=self.MATRIX_HOME_ROOM,
+            MATRIX_ENCRYPTION=self.MATRIX_ENCRYPTION,
             HEALTH_PORT=self.HEALTH_PORT,
             LOG_LEVEL=self.LOG_LEVEL,
         )
 
     def is_complete(self) -> bool:
         # It's complete if we have at least one channel configured, and no validation errors
-        if not self.TELEGRAM_BOT_TOKEN and not self.DISCORD_BOT_TOKEN:
+        if not (self.matrix_configured or self.TELEGRAM_BOT_TOKEN or self.DISCORD_BOT_TOKEN):
             return False
         return len(self.validate()) == 0
 

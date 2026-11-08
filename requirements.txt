@@ -15,3 +15,6 @@ pytest>=8.0
 prompt_toolkit>=3.0
 httplib2>=0.22
 google-api-python-client>=2.0
+mautrix[encryption]>=0.21.0
+markdown-it-py>=3.0
+asyncpg>=0.28
