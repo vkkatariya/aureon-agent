@@ -146,7 +146,7 @@ def db_has_account(db_path: str) -> bool:
 class MatrixChannel(Channel):
     def __init__(self, homeserver, user_id, access_token, router, allowed_users,
                  device_id="AUREON_ARM64", home_room=None, encryption=True,
-                 data_dir="data", pickle_key=None, password=None, env_path=None):
+                 data_dir="data", pickle_key=None, password=None, env_path=None, recovery_key=None):
         self.homeserver = homeserver
         self.user_id = user_id
         self.access_token = access_token
@@ -160,6 +160,7 @@ class MatrixChannel(Channel):
         self.password = password             # enables self-heal when the token/device is revoked
         self.env_path = env_path             # where the rotated token/device id are persisted
         self._relogin_times = []
+        self.recovery_key = recovery_key     # cross-signs this device at start (SSSS recovery key)
 
         self.client = None
         self._crypto_db = None
@@ -334,6 +335,7 @@ class MatrixChannel(Channel):
             self.client.crypto = OlmMachine(self.client, crypto_store, state_store)
             await self.client.crypto.load()
             await self._upload_device_keys()
+            await self._cross_sign()
             token = await crypto_store.get_next_batch()
         else:
             token = None
@@ -348,6 +350,18 @@ class MatrixChannel(Channel):
         self._sync_task = asyncio.ensure_future(self.client.start(None))
         logger.info("matrix: started as %s (device %s, e2ee=%s, %d allowed user(s))",
                     self.user_id, self.device_id, self.encryption, len(self.allowed_users))
+
+    async def _cross_sign(self):
+        """Sign this device with the account's cross-signing keys (fetched from SSSS
+        via the recovery key) so Element shows it verified. Never blocks startup and
+        never logs the key."""
+        if not (self.recovery_key and self.client and self.client.crypto):
+            return
+        try:
+            await self.client.crypto.verify_with_recovery_key(self.recovery_key.strip())
+            logger.info("matrix: device %s cross-signed", self.device_id)
+        except Exception as e:  # noqa: BLE001 — verification is best-effort
+            logger.error("matrix: cross-signing failed (%s); device stays unverified", type(e).__name__)
 
     def _load_or_create_pickle_key(self, db_path):
         """Per-install random pickle key in data/matrix_pickle.key (0600). A store

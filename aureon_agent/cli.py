@@ -278,6 +278,7 @@ async def main():
             encryption=cfg.MATRIX_ENCRYPTION,
             data_dir=DATA_DIR,
             password=os.getenv("MATRIX_PASSWORD") or None,
+            recovery_key=os.getenv("MATRIX_RECOVERY_KEY") or None,
             env_path=os.path.join(BASE_DIR, ".env"),
         ))
     else:

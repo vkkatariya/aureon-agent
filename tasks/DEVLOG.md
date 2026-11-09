@@ -12,6 +12,8 @@
 
 **Verified:** pytest 243 passed (+5: rotate, failure keeps state, rate limit, supervisor flow, no-password no-relogin), ruff clean.
 
+**Cross-signing:** `MATRIX_RECOVERY_KEY` (optional, `.env`) -> after device keys upload, `OlmMachine.verify_with_recovery_key()` pulls the account's cross-signing keys from SSSS and signs the device (best-effort, error logs only the exception type, never the key). Runs on every connect, so self-healed devices are signed too. Correction to earlier claim: Conduit 0.10 does support cross-signing for a bot account (Hermes bot account has it); the kickoff's UIA-401 note was not true here. Live: `device AUREON_ARM64_BC6F80 cross-signed`. Captain still verifies user `@aureon-bot` once from Element (emoji) so the badge turns green. pytest 246 passed.
+
 **Trade-offs:** password stays in `.env` (needed for this); E2EE history of the old device is lost on each reset; first message after reset may need a resend so Element shares room keys.
 
 ---

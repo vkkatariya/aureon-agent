@@ -672,3 +672,41 @@ def test_unknown_token_without_password_does_not_relogin():
             mx.RECONNECT_MIN_SECONDS = old
         return calls
     assert run(go()) == []
+
+
+# ── cross-signing via recovery key ────────────────────────────────────────
+
+class _FakeCrypto:
+    def __init__(self, fail=None):
+        self.keys, self.fail = [], fail
+
+    async def verify_with_recovery_key(self, key):
+        self.keys.append(key)
+        if self.fail:
+            raise self.fail
+
+
+def test_cross_sign_uses_stripped_recovery_key():
+    ch = make(recovery_key="  EsT1 abcd  ")
+    ch.client.crypto = _FakeCrypto()
+    run(ch._cross_sign())
+    assert ch.client.crypto.keys == ["EsT1 abcd"]
+
+
+def test_cross_sign_skipped_without_key_or_crypto():
+    ch = make()
+    ch.client.crypto = _FakeCrypto()
+    run(ch._cross_sign())
+    assert ch.client.crypto.keys == []
+    ch2 = make(recovery_key="k")
+    ch2.client.crypto = None
+    run(ch2._cross_sign())          # no crash
+
+
+def test_cross_sign_failure_is_logged_without_key(caplog):
+    ch = make(recovery_key="SECRET-KEY-VALUE")
+    ch.client.crypto = _FakeCrypto(fail=ValueError("bad key SECRET-KEY-VALUE"))
+    with caplog.at_level("ERROR"):
+        run(ch._cross_sign())       # must not raise
+    assert "cross-signing failed (ValueError)" in caplog.text
+    assert "SECRET-KEY-VALUE" not in caplog.text
