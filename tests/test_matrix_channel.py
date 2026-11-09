@@ -545,3 +545,239 @@ def test_pickle_key_legacy_store_keeps_default(tmp_path):
 def test_pickle_key_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("MATRIX_PICKLE_KEY", "from-env")
     assert make(data_dir=str(tmp_path)).pickle_key == "from-env"
+
+
+# ── token revoked: self-heal ──────────────────────────────────────────────
+
+class _FakeHttp:
+    status = 200
+    body = {"user_id": BOT, "access_token": "newtok", "device_id": "AUREON_ARM64_ABCDEF"}
+    posts = []
+
+    def __init__(self, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, json=None):
+        _FakeHttp.posts.append((url, json))
+        return SimpleNamespace(status_code=_FakeHttp.status, headers={"content-type": "application/json"},
+                               json=lambda: _FakeHttp.body)
+
+
+def _relogin_ch(tmp_path, **kw):
+    env = tmp_path / ".env"
+    env.write_text("MATRIX_ACCESS_TOKEN=old\nMATRIX_DEVICE_ID=AUREON_ARM64\nMATRIX_PASSWORD=pw\n")
+    ch = make(password="pw", env_path=str(env), data_dir=str(tmp_path), **kw)
+    ch.encryption = True
+    for s in ("", "-wal", "-shm"):
+        (tmp_path / f"matrix_crypto.db{s}").write_text("x")
+    _FakeHttp.status = 200
+    _FakeHttp.posts = []
+    return ch, env
+
+
+def test_relogin_rotates_token_device_store_and_env(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, env = _relogin_ch(tmp_path)
+    assert run(ch._relogin()) is True
+    assert ch.access_token == "newtok" and ch.device_id == "AUREON_ARM64_ABCDEF"
+    assert not list(tmp_path.glob("matrix_crypto.db*"))
+    txt = env.read_text()
+    assert "newtok" in txt and "AUREON_ARM64_ABCDEF" in txt and "MATRIX_PASSWORD" in txt
+    url, body = _FakeHttp.posts[0]
+    assert url.endswith("/login") and body["device_id"].startswith("AUREON_ARM64_")
+    assert oct(env.stat().st_mode & 0o777) == "0o600"
+
+
+def test_relogin_failure_keeps_store_and_token(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, env = _relogin_ch(tmp_path)
+    _FakeHttp.status = 403
+    _FakeHttp.body = {"errcode": "M_FORBIDDEN"}
+    try:
+        assert run(ch._relogin()) is False
+    finally:
+        _FakeHttp.body = {"user_id": BOT, "access_token": "newtok", "device_id": "AUREON_ARM64_ABCDEF"}
+    assert ch.access_token == "tok"
+    assert len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+    assert "old" in env.read_text()
+
+
+def test_relogin_is_rate_limited(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    results = [run(ch._relogin()) for _ in range(mx.RELOGIN_MAX + 1)]
+    assert results == [True] * mx.RELOGIN_MAX + [False]
+
+
+def test_supervisor_relogins_on_unknown_token_then_reconnects(tmp_path, monkeypatch):
+    from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+
+    async def go():
+        ch, _ = _relogin_ch(tmp_path)
+        attempts, relogins = [], []
+
+        async def connect():
+            attempts.append(ch.access_token)
+            if len(attempts) <= 2:
+                raise MUnknownToken("Unknown access token")
+            ch._sync_task = asyncio.ensure_future(asyncio.sleep(60))
+
+        async def relogin():
+            relogins.append(1)
+            ch.access_token = "newtok"
+            return True
+
+        ch._connect, ch._relogin = connect, relogin
+        await ch.start()
+        for _ in range(100):
+            if len(attempts) >= 3:
+                break
+            await asyncio.sleep(0.02)
+        await ch.stop()
+        return attempts, relogins
+    attempts, relogins = run(go())
+    assert attempts == ["tok", "tok", "newtok"] and relogins == [1]   # 2 strikes first
+
+
+def test_unknown_token_without_password_does_not_relogin(monkeypatch):
+    from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+    ch = make()          # no password
+
+    async def go():
+        calls = []
+
+        async def connect():
+            raise MUnknownToken("x")
+
+        async def relogin():
+            calls.append(1)
+            return True
+        ch._connect, ch._relogin = connect, relogin
+        await ch.start()
+        await asyncio.sleep(0.15)
+        await ch.stop()
+        return calls
+    assert run(go()) == []
+
+
+def test_relogin_crash_does_not_kill_supervisor(monkeypatch):
+    from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+    monkeypatch.setattr(mx, "RECONNECT_MAX_SECONDS", 0.02)
+    ch = make(password="pw")
+
+    async def go():
+        attempts = []
+
+        async def connect():
+            attempts.append(1)
+            raise MUnknownToken("x")
+
+        async def relogin():
+            raise PermissionError("ro fs")
+        ch._connect, ch._relogin = connect, relogin
+        await ch.start()
+        await asyncio.sleep(0.4)
+        alive = not ch._supervisor.done()
+        await ch.stop()
+        return alive, len(attempts)
+    alive, n = run(go())
+    assert alive and n > 3
+
+
+def test_relogin_persist_failure_keeps_store_and_creds(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(ch, "_persist_credentials", lambda *a: False)
+    assert run(ch._relogin()) is False
+    assert ch.access_token == "tok"
+    assert len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+
+
+def test_relogin_missing_access_token_is_failure(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(_FakeHttp, "body", {"user_id": BOT})
+    assert run(ch._relogin()) is False
+    assert ch.access_token == "tok" and len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+
+
+def test_relogin_wrong_password_disables_further_attempts(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(_FakeHttp, "status", 403)
+    monkeypatch.setattr(_FakeHttp, "body", {"errcode": "M_FORBIDDEN"})
+    assert run(ch._relogin()) is False
+    assert ch._relogin_disabled
+
+
+def test_relogin_handles_trailing_slash_homeserver(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    ch.homeserver = "https://hs.example.org/"
+    run(ch._relogin())
+    assert _FakeHttp.posts[0][0] == "https://hs.example.org/_matrix/client/v3/login"
+
+
+def test_cross_sign_timeout_does_not_block(monkeypatch):
+    monkeypatch.setattr(mx, "CROSS_SIGN_TIMEOUT_SECONDS", 0.05)
+
+    class Slow:
+        async def verify_with_recovery_key(self, key):
+            await asyncio.sleep(5)
+    ch = make(recovery_key="k")
+    ch.client.crypto = Slow()
+    run(ch._cross_sign())     # returns after timeout, no raise
+
+
+# ── cross-signing via recovery key ────────────────────────────────────────
+
+class _FakeCrypto:
+    def __init__(self, fail=None):
+        self.keys, self.fail = [], fail
+
+    async def verify_with_recovery_key(self, key):
+        self.keys.append(key)
+        if self.fail:
+            raise self.fail
+
+
+def test_cross_sign_uses_stripped_recovery_key():
+    ch = make(recovery_key="  EsT1 abcd  ")
+    ch.client.crypto = _FakeCrypto()
+    run(ch._cross_sign())
+    assert ch.client.crypto.keys == ["EsT1 abcd"]
+
+
+def test_cross_sign_skipped_without_key_or_crypto():
+    ch = make()
+    ch.client.crypto = _FakeCrypto()
+    run(ch._cross_sign())
+    assert ch.client.crypto.keys == []
+    ch2 = make(recovery_key="k")
+    ch2.client.crypto = None
+    run(ch2._cross_sign())          # no crash
+
+
+def test_cross_sign_failure_is_logged_without_key(caplog):
+    ch = make(recovery_key="SECRET-KEY-VALUE")
+    ch.client.crypto = _FakeCrypto(fail=ValueError("bad key SECRET-KEY-VALUE"))
+    with caplog.at_level("ERROR"):
+        run(ch._cross_sign())       # must not raise
+    assert "cross-signing failed (ValueError)" in caplog.text
+    assert "SECRET-KEY-VALUE" not in caplog.text

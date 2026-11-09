@@ -2,6 +2,23 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-09 · Claude Code (local) · fix(matrix): self-heal when token/device is revoked (branch `fix/matrix-token-self-heal`)
+
+**Mode:** Builder
+
+**Did:** Captain removed the bot's device session in Element while verifying; token died (`M_UNKNOWN_TOKEN`) and the supervisor retried forever. Now, if `MATRIX_PASSWORD` is set and the homeserver answers `M_UNKNOWN_TOKEN`, `MatrixChannel._relogin()` logs in again on a fresh device (`<base>_<hex6>`), deletes the crypto store (belongs to the dead device), and persists `MATRIX_ACCESS_TOKEN`/`MATRIX_DEVICE_ID` to `.env` (0600). Max 3 re-logins per 10 min; wrong password just logs the errcode and backs off. No password -> old behavior (retry with backoff). `cli.py` passes `password=os.getenv("MATRIX_PASSWORD")` and `env_path`.
+
+**Live proof:** revoked the running device (`delete_devices`); log: sync loop ended -> `M_UNKNOWN_TOKEN` -> "re-logged in as new device AUREON_ARM64_BC6F80 and reset the E2EE store" -> started, `.env` updated.
+
+**Verified:** pytest 243 passed (+5: rotate, failure keeps state, rate limit, supervisor flow, no-password no-relogin), ruff clean.
+
+**Cross-signing:** `MATRIX_RECOVERY_KEY` (optional, `.env`) -> after device keys upload, `OlmMachine.verify_with_recovery_key()` pulls the account's cross-signing keys from SSSS and signs the device (best-effort, error logs only the exception type, never the key). Runs on every connect, so self-healed devices are signed too. Correction to earlier claim: Conduit 0.10 does support cross-signing for a bot account (Hermes bot account has it); the kickoff's UIA-401 note was not true here. Live: `device AUREON_ARM64_BC6F80 cross-signed`. Captain still verifies user `@aureon-bot` once from Element (emoji) so the badge turns green. pytest 246 passed.
+
+**Review round 1 (`/code-review high`):** fixed: supervisor no longer dies if `_relogin` raises (guarded); credentials persisted before the store is wiped and persist/remove failures abort the heal with old state intact; destructive reset needs 2 consecutive `M_UNKNOWN_TOKEN` (transient-fault guard); wrong password or 3 re-logins/10min latch self-heal off until restart (accurate log, no password guessing); trailing-slash homeserver; only generated `_XXXXXX` hex suffix is stripped from device id; `_cross_sign` has 30s timeout; stale docstring corrected; +6 tests (252 total). Not changed: `MATRIX_PASSWORD`/`MATRIX_RECOVERY_KEY` still read via `os.getenv` in cli.py, not `AureonConfig` (setup wizard/redaction coverage is a follow-up). Re-verified live: revoke -> 2 strikes -> re-login -> cross-signed on new device `AUREON_ARM64_CA738E`.
+
+**Trade-offs:** password stays in `.env` (needed for this); E2EE history of the old device is lost on each reset; first message after reset may need a resend so Element shares room keys.
+
+---
 ## 2026-11-09 · Claude Code (local) · fix(logging): httpx token leak + shared run_cli (branch `fix/httpx-token-log-dedupe-cli`)
 
 **Mode:** Builder

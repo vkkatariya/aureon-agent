@@ -277,6 +277,9 @@ async def main():
             home_room=cfg.MATRIX_HOME_ROOM,
             encryption=cfg.MATRIX_ENCRYPTION,
             data_dir=DATA_DIR,
+            password=os.getenv("MATRIX_PASSWORD") or None,
+            recovery_key=os.getenv("MATRIX_RECOVERY_KEY") or None,
+            env_path=os.path.join(BASE_DIR, ".env"),
         ))
     else:
         logger.info("MATRIX_USER_ID/MATRIX_ACCESS_TOKEN not set, Matrix channel disabled")
