@@ -40,6 +40,8 @@ RECONNECT_MAX_SECONDS = 60
 DEFAULT_PICKLE_KEY = "aureon-agent"   # override with MATRIX_PICKLE_KEY
 RELOGIN_MAX = 3                 # password re-logins allowed per window (stops login loops)
 RELOGIN_WINDOW_SECONDS = 600
+TOKEN_STRIKES_BEFORE_RELOGIN = 2
+CROSS_SIGN_TIMEOUT_SECONDS = 30
 EDIT_THROTTLE_SECONDS = 1.0
 DEDUPE_CACHE_SIZE = 1000
 TYPING_TIMEOUT_MS = 10000
@@ -160,6 +162,8 @@ class MatrixChannel(Channel):
         self.password = password             # enables self-heal when the token/device is revoked
         self.env_path = env_path             # where the rotated token/device id are persisted
         self._relogin_times = []
+        self._relogin_disabled = False
+        self._token_strikes = 0
         self.recovery_key = recovery_key     # cross-signs this device at start (SSSS recovery key)
 
         self.client = None
@@ -193,6 +197,7 @@ class MatrixChannel(Channel):
         while not self._stopping:
             try:
                 await self._connect()
+                self._token_strikes = 0
                 delay = RECONNECT_MIN_SECONDS
                 await self._sync_task
                 if not self._stopping:
@@ -201,14 +206,27 @@ class MatrixChannel(Channel):
                 raise
             except Exception as e:
                 logger.error("matrix: connection failed: %s — retrying in %ds", e, delay)
-                relogin = isinstance(e, MUnknownToken) and bool(self.password)
+                if isinstance(e, MUnknownToken):
+                    self._token_strikes += 1
+                else:
+                    self._token_strikes = 0
+                # Two consecutive rejections before the destructive reset: one
+                # M_UNKNOWN_TOKEN could be a transient homeserver fault.
+                relogin = (self._token_strikes >= TOKEN_STRIKES_BEFORE_RELOGIN
+                           and bool(self.password) and not self._relogin_disabled)
             finally:
                 await self._teardown()
             if self._stopping:
                 break
             if relogin:
                 relogin = False
-                if await self._relogin():
+                try:
+                    healed = await self._relogin()
+                except Exception as e:  # noqa: BLE001 — never let self-heal kill the supervisor
+                    logger.error("matrix: re-login crashed: %s", type(e).__name__)
+                    healed = False
+                if healed:
+                    self._token_strikes = 0
                     delay = RECONNECT_MIN_SECONDS
                     continue
             await asyncio.sleep(delay)
@@ -216,22 +234,24 @@ class MatrixChannel(Channel):
 
     async def _relogin(self) -> bool:
         """Token/device was revoked (e.g. session removed in Element). Log in again
-        with MATRIX_PASSWORD on a fresh device, reset the crypto store (it belongs to
-        the dead device) and persist the new credentials. Rate-limited; never prints
-        the password or token."""
+        with MATRIX_PASSWORD on a fresh device, persist the new credentials, then
+        reset the crypto store (it belongs to the dead device). Rate-limited; never
+        prints the password or token. Any failure returns False with the old
+        credentials and store untouched."""
         now = time.monotonic()
         self._relogin_times = [t for t in self._relogin_times if now - t < RELOGIN_WINDOW_SECONDS]
         if len(self._relogin_times) >= RELOGIN_MAX:
-            logger.error("matrix: token revoked again, %d re-logins in %ds; giving up until restart",
+            self._relogin_disabled = True
+            logger.error("matrix: token revoked again, %d re-logins in %ds; self-heal disabled until restart",
                          RELOGIN_MAX, RELOGIN_WINDOW_SECONDS)
             return False
         self._relogin_times.append(now)
-        base = re.sub(r"_([0-9A-F]{6}|\d+)$", "", self.device_id)
+        base = re.sub(r"_[0-9A-F]{6}$", "", self.device_id)
         device = f"{base}_{secrets.token_hex(3).upper()}"
         try:
             import httpx
             async with httpx.AsyncClient(timeout=30) as http:
-                r = await http.post(f"{self.homeserver}/_matrix/client/v3/login", json={
+                r = await http.post(f"{self.homeserver.rstrip('/')}/_matrix/client/v3/login", json={
                     "type": "m.login.password",
                     "identifier": {"type": "m.id.user", "user": self.user_id},
                     "password": self.password, "device_id": device,
@@ -239,37 +259,45 @@ class MatrixChannel(Channel):
             if r.status_code != 200:
                 code = r.json().get("errcode") if "json" in r.headers.get("content-type", "") else r.status_code
                 logger.error("matrix: re-login failed (%s)", code)
+                if code == "M_FORBIDDEN":
+                    self._relogin_disabled = True   # wrong password: stop guessing
                 return False
             data = r.json()
-            if data.get("user_id") != self.user_id:
-                logger.error("matrix: re-login returned %s, expected %s", data.get("user_id"), self.user_id)
+            if data.get("user_id") != self.user_id or not data.get("access_token"):
+                logger.error("matrix: re-login returned an unexpected response")
                 return False
         except Exception as e:  # noqa: BLE001 — network etc.; supervisor backs off
             logger.error("matrix: re-login failed: %s", type(e).__name__)
             return False
+        new_token, new_device = data["access_token"], data.get("device_id", device)
+        if not self._persist_credentials(new_token, new_device):
+            return False   # keep old creds + store; otherwise every restart would re-login and wipe
         if self.encryption:
             for suffix in ("", "-wal", "-shm"):
                 try:
                     os.remove(os.path.join(self.data_dir, "matrix_crypto.db" + suffix))
                 except FileNotFoundError:
                     pass
-        self.access_token = data["access_token"]
-        self.device_id = data.get("device_id", device)
-        self._persist_credentials()
+                except OSError as e:
+                    logger.error("matrix: could not reset crypto store: %s", type(e).__name__)
+                    return False
+        self.access_token, self.device_id = new_token, new_device
         logger.warning("matrix: token was revoked; re-logged in as new device %s and reset the E2EE store",
                        self.device_id)
         return True
 
-    def _persist_credentials(self):
+    def _persist_credentials(self, token, device) -> bool:
         if not self.env_path:
-            return
+            return True
         try:
             from dotenv import set_key
-            set_key(self.env_path, "MATRIX_ACCESS_TOKEN", self.access_token)
-            set_key(self.env_path, "MATRIX_DEVICE_ID", self.device_id)
+            set_key(self.env_path, "MATRIX_ACCESS_TOKEN", token)
+            set_key(self.env_path, "MATRIX_DEVICE_ID", device)
             os.chmod(self.env_path, 0o600)
+            return True
         except Exception as e:  # noqa: BLE001
             logger.error("matrix: could not persist new credentials to %s: %s", self.env_path, type(e).__name__)
+            return False
 
     async def _connect(self):
         sync_store = None
@@ -358,7 +386,9 @@ class MatrixChannel(Channel):
         if not (self.recovery_key and self.client and self.client.crypto):
             return
         try:
-            await self.client.crypto.verify_with_recovery_key(self.recovery_key.strip())
+            await asyncio.wait_for(
+                self.client.crypto.verify_with_recovery_key(self.recovery_key.strip()),
+                CROSS_SIGN_TIMEOUT_SECONDS)
             logger.info("matrix: device %s cross-signed", self.device_id)
         except Exception as e:  # noqa: BLE001 — verification is best-effort
             logger.error("matrix: cross-signing failed (%s); device stays unverified", type(e).__name__)
@@ -384,10 +414,9 @@ class MatrixChannel(Channel):
         return key
 
     async def _upload_device_keys(self):
-        """Best-effort device/one-time key upload. Cross-signing is deliberately
-        not bootstrapped: Conduit 0.10 answers its UIA step with 401 (mautrix UIA
-        gap). Non-fatal — per-room/DM Megolm E2EE works regardless; the bot's
-        device just shows as unverified in Element."""
+        """Best-effort device/one-time key upload. Non-fatal — Megolm E2EE works
+        regardless. Verification is separate: see _cross_sign (needs
+        MATRIX_RECOVERY_KEY); without it the device shows as unverified."""
         try:
             await self.client.crypto.share_keys()
         except Exception as e:

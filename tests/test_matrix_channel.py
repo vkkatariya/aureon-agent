@@ -628,7 +628,7 @@ def test_supervisor_relogins_on_unknown_token_then_reconnects(tmp_path, monkeypa
 
         async def connect():
             attempts.append(ch.access_token)
-            if len(attempts) == 1:
+            if len(attempts) <= 2:
                 raise MUnknownToken("Unknown access token")
             ch._sync_task = asyncio.ensure_future(asyncio.sleep(60))
 
@@ -640,17 +640,18 @@ def test_supervisor_relogins_on_unknown_token_then_reconnects(tmp_path, monkeypa
         ch._connect, ch._relogin = connect, relogin
         await ch.start()
         for _ in range(100):
-            if len(attempts) >= 2:
+            if len(attempts) >= 3:
                 break
             await asyncio.sleep(0.02)
         await ch.stop()
         return attempts, relogins
     attempts, relogins = run(go())
-    assert attempts == ["tok", "newtok"] and relogins == [1]
+    assert attempts == ["tok", "tok", "newtok"] and relogins == [1]   # 2 strikes first
 
 
-def test_unknown_token_without_password_does_not_relogin():
+def test_unknown_token_without_password_does_not_relogin(monkeypatch):
     from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
     ch = make()          # no password
 
     async def go():
@@ -663,15 +664,85 @@ def test_unknown_token_without_password_does_not_relogin():
             calls.append(1)
             return True
         ch._connect, ch._relogin = connect, relogin
-        mx.RECONNECT_MIN_SECONDS, old = 0.01, mx.RECONNECT_MIN_SECONDS
-        try:
-            await ch.start()
-            await asyncio.sleep(0.1)
-            await ch.stop()
-        finally:
-            mx.RECONNECT_MIN_SECONDS = old
+        await ch.start()
+        await asyncio.sleep(0.15)
+        await ch.stop()
         return calls
     assert run(go()) == []
+
+
+def test_relogin_crash_does_not_kill_supervisor(monkeypatch):
+    from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+    monkeypatch.setattr(mx, "RECONNECT_MAX_SECONDS", 0.02)
+    ch = make(password="pw")
+
+    async def go():
+        attempts = []
+
+        async def connect():
+            attempts.append(1)
+            raise MUnknownToken("x")
+
+        async def relogin():
+            raise PermissionError("ro fs")
+        ch._connect, ch._relogin = connect, relogin
+        await ch.start()
+        await asyncio.sleep(0.4)
+        alive = not ch._supervisor.done()
+        await ch.stop()
+        return alive, len(attempts)
+    alive, n = run(go())
+    assert alive and n > 3
+
+
+def test_relogin_persist_failure_keeps_store_and_creds(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(ch, "_persist_credentials", lambda *a: False)
+    assert run(ch._relogin()) is False
+    assert ch.access_token == "tok"
+    assert len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+
+
+def test_relogin_missing_access_token_is_failure(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(_FakeHttp, "body", {"user_id": BOT})
+    assert run(ch._relogin()) is False
+    assert ch.access_token == "tok" and len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+
+
+def test_relogin_wrong_password_disables_further_attempts(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    monkeypatch.setattr(_FakeHttp, "status", 403)
+    monkeypatch.setattr(_FakeHttp, "body", {"errcode": "M_FORBIDDEN"})
+    assert run(ch._relogin()) is False
+    assert ch._relogin_disabled
+
+
+def test_relogin_handles_trailing_slash_homeserver(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    ch.homeserver = "https://hs.example.org/"
+    run(ch._relogin())
+    assert _FakeHttp.posts[0][0] == "https://hs.example.org/_matrix/client/v3/login"
+
+
+def test_cross_sign_timeout_does_not_block(monkeypatch):
+    monkeypatch.setattr(mx, "CROSS_SIGN_TIMEOUT_SECONDS", 0.05)
+
+    class Slow:
+        async def verify_with_recovery_key(self, key):
+            await asyncio.sleep(5)
+    ch = make(recovery_key="k")
+    ch.client.crypto = Slow()
+    run(ch._cross_sign())     # returns after timeout, no raise
 
 
 # ── cross-signing via recovery key ────────────────────────────────────────

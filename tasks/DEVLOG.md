@@ -14,6 +14,8 @@
 
 **Cross-signing:** `MATRIX_RECOVERY_KEY` (optional, `.env`) -> after device keys upload, `OlmMachine.verify_with_recovery_key()` pulls the account's cross-signing keys from SSSS and signs the device (best-effort, error logs only the exception type, never the key). Runs on every connect, so self-healed devices are signed too. Correction to earlier claim: Conduit 0.10 does support cross-signing for a bot account (Hermes bot account has it); the kickoff's UIA-401 note was not true here. Live: `device AUREON_ARM64_BC6F80 cross-signed`. Captain still verifies user `@aureon-bot` once from Element (emoji) so the badge turns green. pytest 246 passed.
 
+**Review round 1 (`/code-review high`):** fixed: supervisor no longer dies if `_relogin` raises (guarded); credentials persisted before the store is wiped and persist/remove failures abort the heal with old state intact; destructive reset needs 2 consecutive `M_UNKNOWN_TOKEN` (transient-fault guard); wrong password or 3 re-logins/10min latch self-heal off until restart (accurate log, no password guessing); trailing-slash homeserver; only generated `_XXXXXX` hex suffix is stripped from device id; `_cross_sign` has 30s timeout; stale docstring corrected; +6 tests (252 total). Not changed: `MATRIX_PASSWORD`/`MATRIX_RECOVERY_KEY` still read via `os.getenv` in cli.py, not `AureonConfig` (setup wizard/redaction coverage is a follow-up). Re-verified live: revoke -> 2 strikes -> re-login -> cross-signed on new device `AUREON_ARM64_CA738E`.
+
 **Trade-offs:** password stays in `.env` (needed for this); E2EE history of the old device is lost on each reset; first message after reset may need a resend so Element shares room keys.
 
 ---
