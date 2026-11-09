@@ -14,6 +14,7 @@ import html
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -21,6 +22,7 @@ from collections import OrderedDict
 
 from markdown_it import MarkdownIt
 from mautrix.client import Client
+from mautrix.errors import MUnknownToken
 from mautrix.types import EventType, Membership, UserID
 
 from channels.base import Channel
@@ -36,6 +38,8 @@ NEW_CONFIRM_TTL = 120           # seconds a !new confirmation stays pending
 RECONNECT_MIN_SECONDS = 5
 RECONNECT_MAX_SECONDS = 60
 DEFAULT_PICKLE_KEY = "aureon-agent"   # override with MATRIX_PICKLE_KEY
+RELOGIN_MAX = 3                 # password re-logins allowed per window (stops login loops)
+RELOGIN_WINDOW_SECONDS = 600
 EDIT_THROTTLE_SECONDS = 1.0
 DEDUPE_CACHE_SIZE = 1000
 TYPING_TIMEOUT_MS = 10000
@@ -142,7 +146,7 @@ def db_has_account(db_path: str) -> bool:
 class MatrixChannel(Channel):
     def __init__(self, homeserver, user_id, access_token, router, allowed_users,
                  device_id="AUREON_ARM64", home_room=None, encryption=True,
-                 data_dir="data", pickle_key=None):
+                 data_dir="data", pickle_key=None, password=None, env_path=None):
         self.homeserver = homeserver
         self.user_id = user_id
         self.access_token = access_token
@@ -153,6 +157,9 @@ class MatrixChannel(Channel):
         self.router = router
         self.data_dir = data_dir
         self.pickle_key = pickle_key or os.getenv("MATRIX_PICKLE_KEY")  # else resolved per install
+        self.password = password             # enables self-heal when the token/device is revoked
+        self.env_path = env_path             # where the rotated token/device id are persisted
+        self._relogin_times = []
 
         self.client = None
         self._crypto_db = None
@@ -181,6 +188,7 @@ class MatrixChannel(Channel):
 
     async def _run_forever(self):
         delay = RECONNECT_MIN_SECONDS
+        relogin = False
         while not self._stopping:
             try:
                 await self._connect()
@@ -192,12 +200,75 @@ class MatrixChannel(Channel):
                 raise
             except Exception as e:
                 logger.error("matrix: connection failed: %s — retrying in %ds", e, delay)
+                relogin = isinstance(e, MUnknownToken) and bool(self.password)
             finally:
                 await self._teardown()
             if self._stopping:
                 break
+            if relogin:
+                relogin = False
+                if await self._relogin():
+                    delay = RECONNECT_MIN_SECONDS
+                    continue
             await asyncio.sleep(delay)
             delay = min(delay * 2, RECONNECT_MAX_SECONDS)
+
+    async def _relogin(self) -> bool:
+        """Token/device was revoked (e.g. session removed in Element). Log in again
+        with MATRIX_PASSWORD on a fresh device, reset the crypto store (it belongs to
+        the dead device) and persist the new credentials. Rate-limited; never prints
+        the password or token."""
+        now = time.monotonic()
+        self._relogin_times = [t for t in self._relogin_times if now - t < RELOGIN_WINDOW_SECONDS]
+        if len(self._relogin_times) >= RELOGIN_MAX:
+            logger.error("matrix: token revoked again, %d re-logins in %ds; giving up until restart",
+                         RELOGIN_MAX, RELOGIN_WINDOW_SECONDS)
+            return False
+        self._relogin_times.append(now)
+        base = re.sub(r"_([0-9A-F]{6}|\d+)$", "", self.device_id)
+        device = f"{base}_{secrets.token_hex(3).upper()}"
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30) as http:
+                r = await http.post(f"{self.homeserver}/_matrix/client/v3/login", json={
+                    "type": "m.login.password",
+                    "identifier": {"type": "m.id.user", "user": self.user_id},
+                    "password": self.password, "device_id": device,
+                    "initial_device_display_name": "aureon-agent"})
+            if r.status_code != 200:
+                code = r.json().get("errcode") if "json" in r.headers.get("content-type", "") else r.status_code
+                logger.error("matrix: re-login failed (%s)", code)
+                return False
+            data = r.json()
+            if data.get("user_id") != self.user_id:
+                logger.error("matrix: re-login returned %s, expected %s", data.get("user_id"), self.user_id)
+                return False
+        except Exception as e:  # noqa: BLE001 — network etc.; supervisor backs off
+            logger.error("matrix: re-login failed: %s", type(e).__name__)
+            return False
+        if self.encryption:
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(os.path.join(self.data_dir, "matrix_crypto.db" + suffix))
+                except FileNotFoundError:
+                    pass
+        self.access_token = data["access_token"]
+        self.device_id = data.get("device_id", device)
+        self._persist_credentials()
+        logger.warning("matrix: token was revoked; re-logged in as new device %s and reset the E2EE store",
+                       self.device_id)
+        return True
+
+    def _persist_credentials(self):
+        if not self.env_path:
+            return
+        try:
+            from dotenv import set_key
+            set_key(self.env_path, "MATRIX_ACCESS_TOKEN", self.access_token)
+            set_key(self.env_path, "MATRIX_DEVICE_ID", self.device_id)
+            os.chmod(self.env_path, 0o600)
+        except Exception as e:  # noqa: BLE001
+            logger.error("matrix: could not persist new credentials to %s: %s", self.env_path, type(e).__name__)
 
     async def _connect(self):
         sync_store = None

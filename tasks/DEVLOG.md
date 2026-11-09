@@ -2,6 +2,19 @@
 > Append-only. Agents write an entry at the end of every session. Newest at top.
 
 ---
+## 2026-11-09 · Claude Code (local) · fix(matrix): self-heal when token/device is revoked (branch `fix/matrix-token-self-heal`)
+
+**Mode:** Builder
+
+**Did:** Captain removed the bot's device session in Element while verifying; token died (`M_UNKNOWN_TOKEN`) and the supervisor retried forever. Now, if `MATRIX_PASSWORD` is set and the homeserver answers `M_UNKNOWN_TOKEN`, `MatrixChannel._relogin()` logs in again on a fresh device (`<base>_<hex6>`), deletes the crypto store (belongs to the dead device), and persists `MATRIX_ACCESS_TOKEN`/`MATRIX_DEVICE_ID` to `.env` (0600). Max 3 re-logins per 10 min; wrong password just logs the errcode and backs off. No password -> old behavior (retry with backoff). `cli.py` passes `password=os.getenv("MATRIX_PASSWORD")` and `env_path`.
+
+**Live proof:** revoked the running device (`delete_devices`); log: sync loop ended -> `M_UNKNOWN_TOKEN` -> "re-logged in as new device AUREON_ARM64_BC6F80 and reset the E2EE store" -> started, `.env` updated.
+
+**Verified:** pytest 243 passed (+5: rotate, failure keeps state, rate limit, supervisor flow, no-password no-relogin), ruff clean.
+
+**Trade-offs:** password stays in `.env` (needed for this); E2EE history of the old device is lost on each reset; first message after reset may need a resend so Element shares room keys.
+
+---
 ## 2026-11-09 · Claude Code (local) · fix(logging): httpx token leak + shared run_cli (branch `fix/httpx-token-log-dedupe-cli`)
 
 **Mode:** Builder

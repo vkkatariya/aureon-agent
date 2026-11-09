@@ -545,3 +545,130 @@ def test_pickle_key_legacy_store_keeps_default(tmp_path):
 def test_pickle_key_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("MATRIX_PICKLE_KEY", "from-env")
     assert make(data_dir=str(tmp_path)).pickle_key == "from-env"
+
+
+# ── token revoked: self-heal ──────────────────────────────────────────────
+
+class _FakeHttp:
+    status = 200
+    body = {"user_id": BOT, "access_token": "newtok", "device_id": "AUREON_ARM64_ABCDEF"}
+    posts = []
+
+    def __init__(self, **kw):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, json=None):
+        _FakeHttp.posts.append((url, json))
+        return SimpleNamespace(status_code=_FakeHttp.status, headers={"content-type": "application/json"},
+                               json=lambda: _FakeHttp.body)
+
+
+def _relogin_ch(tmp_path, **kw):
+    env = tmp_path / ".env"
+    env.write_text("MATRIX_ACCESS_TOKEN=old\nMATRIX_DEVICE_ID=AUREON_ARM64\nMATRIX_PASSWORD=pw\n")
+    ch = make(password="pw", env_path=str(env), data_dir=str(tmp_path), **kw)
+    ch.encryption = True
+    for s in ("", "-wal", "-shm"):
+        (tmp_path / f"matrix_crypto.db{s}").write_text("x")
+    _FakeHttp.status = 200
+    _FakeHttp.posts = []
+    return ch, env
+
+
+def test_relogin_rotates_token_device_store_and_env(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, env = _relogin_ch(tmp_path)
+    assert run(ch._relogin()) is True
+    assert ch.access_token == "newtok" and ch.device_id == "AUREON_ARM64_ABCDEF"
+    assert not list(tmp_path.glob("matrix_crypto.db*"))
+    txt = env.read_text()
+    assert "newtok" in txt and "AUREON_ARM64_ABCDEF" in txt and "MATRIX_PASSWORD" in txt
+    url, body = _FakeHttp.posts[0]
+    assert url.endswith("/login") and body["device_id"].startswith("AUREON_ARM64_")
+    assert oct(env.stat().st_mode & 0o777) == "0o600"
+
+
+def test_relogin_failure_keeps_store_and_token(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, env = _relogin_ch(tmp_path)
+    _FakeHttp.status = 403
+    _FakeHttp.body = {"errcode": "M_FORBIDDEN"}
+    try:
+        assert run(ch._relogin()) is False
+    finally:
+        _FakeHttp.body = {"user_id": BOT, "access_token": "newtok", "device_id": "AUREON_ARM64_ABCDEF"}
+    assert ch.access_token == "tok"
+    assert len(list(tmp_path.glob("matrix_crypto.db*"))) == 3
+    assert "old" in env.read_text()
+
+
+def test_relogin_is_rate_limited(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeHttp)
+    ch, _ = _relogin_ch(tmp_path)
+    results = [run(ch._relogin()) for _ in range(mx.RELOGIN_MAX + 1)]
+    assert results == [True] * mx.RELOGIN_MAX + [False]
+
+
+def test_supervisor_relogins_on_unknown_token_then_reconnects(tmp_path, monkeypatch):
+    from mautrix.errors import MUnknownToken
+    monkeypatch.setattr(mx, "RECONNECT_MIN_SECONDS", 0.01)
+
+    async def go():
+        ch, _ = _relogin_ch(tmp_path)
+        attempts, relogins = [], []
+
+        async def connect():
+            attempts.append(ch.access_token)
+            if len(attempts) == 1:
+                raise MUnknownToken("Unknown access token")
+            ch._sync_task = asyncio.ensure_future(asyncio.sleep(60))
+
+        async def relogin():
+            relogins.append(1)
+            ch.access_token = "newtok"
+            return True
+
+        ch._connect, ch._relogin = connect, relogin
+        await ch.start()
+        for _ in range(100):
+            if len(attempts) >= 2:
+                break
+            await asyncio.sleep(0.02)
+        await ch.stop()
+        return attempts, relogins
+    attempts, relogins = run(go())
+    assert attempts == ["tok", "newtok"] and relogins == [1]
+
+
+def test_unknown_token_without_password_does_not_relogin():
+    from mautrix.errors import MUnknownToken
+    ch = make()          # no password
+
+    async def go():
+        calls = []
+
+        async def connect():
+            raise MUnknownToken("x")
+
+        async def relogin():
+            calls.append(1)
+            return True
+        ch._connect, ch._relogin = connect, relogin
+        mx.RECONNECT_MIN_SECONDS, old = 0.01, mx.RECONNECT_MIN_SECONDS
+        try:
+            await ch.start()
+            await asyncio.sleep(0.1)
+            await ch.stop()
+        finally:
+            mx.RECONNECT_MIN_SECONDS = old
+        return calls
+    assert run(go()) == []
